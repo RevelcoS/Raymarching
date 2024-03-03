@@ -1,0 +1,8 @@
+[submodule "modules/stb"]
+	path = modules/stb
+    url = git@github.com:nothings/stb.git
+    ignore = dirty
+[submodule "modules/LiteMath"]
+	path = modules/LiteMath
+    url = https://github.com/msu-graphics-group/LiteMath.git
+    ignore = dirty

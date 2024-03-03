@@ -1,0 +1,13 @@
+# Vim files
+*.swp
+
+# MacOS files
+.DS_Store
+
+# Runtime files
+binary/*
+include/*
+library/*
+
+# Keep essential folders
+!.gitkeep
