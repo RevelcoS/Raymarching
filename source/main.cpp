@@ -2,24 +2,10 @@
 #include <Image2d.h>
 #include <functional>
 #include <iostream>
+#include "object.h"
 
 using namespace LiteMath;
 using namespace LiteImage;
-
-struct Box {
-    float3 position;
-    float3 size;
-};
-
-struct Sphere {
-    float3 position;
-    float radius;
-    float3 color;
-};
-
-struct Light {
-    float3 position;
-};
 
 namespace constants {
     const int iterations = 100;
@@ -27,20 +13,20 @@ namespace constants {
 }
 
 namespace scene {
-    Box bounds  = Box { float3(0.0f), float3(100.0f) };
-    Light light = Light { float3(-15.0f, 15.0f, 15.0f) };
-    Sphere obj  = Sphere { float3(0.0f, 0.0f, 25.0f), 5.0f, float3(1.0f, 0.0f, 0.0f) };
+    Object::Box bounds  = Object::Box ( float3(0.0f), float3(100.0f) );
+    Object::Light light = Object::Light ( float3(-15.0f, 15.0f, 15.0f) );
+    Object::Sphere obj  = Object::Sphere ( float3(0.0f, 0.0f, 25.0f), 5.0f, float3(1.0f, 0.0f, 0.0f) );
 }
 
-bool inside(const Box &obj, float3 position) {
+bool inside(const Object::Box &obj, float3 position) {
     return all_of(position - obj.position < obj.size / 2);
 }
 
-float SDF(Sphere &obj, float3 position) {
+float SDF(Object::Sphere &obj, float3 position) {
     return length(obj.position - position) - obj.radius;
 }
 
-float3 grad(std::function<float(Sphere&, float3)> f, Sphere &obj, float3 p) {
+float3 grad(std::function<float(Object::Sphere&, float3)> f, Object::Sphere &obj, float3 p) {
     static const float h = 1e-3f;
     float3 dx = float3(h, 0.0f, 0.0f);
     float3 dy = float3(0.0f, h, 0.0f);
@@ -55,11 +41,11 @@ void print(float3 vector) {
     std::cout << vector.x << " " << vector.y << " " << vector.z << std::endl;
 }
 
-float lighting(Light &light, float3 position, float3 normal) {
+float lighting(Object::Light &light, float3 position, float3 normal) {
     return max(constants::saturation, dot(normal, normalize(light.position - position)));
 }
 
-float4 raymarch(Sphere &obj, float3 ray) {
+float4 raymarch(Object::Sphere &obj, float3 ray) {
     float3 position(0.0f);
     bool hit = true;
     for (int _ = 0; _ < constants::iterations; _++) {

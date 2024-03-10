@@ -8,7 +8,7 @@ LIB = library/
 INC = include/
 MOD = modules/
 
-INCFLAGS  = -I$(INC)
+INCFLAGS  = -I$(INC) -I$(SRC)include/
 LIBFLAGS  = -L$(LIB)
 CXXFLAGS  = $(INCFLAGS)
 LDFLAGS   = $(LIBFLAGS)
