@@ -1,4 +1,6 @@
 #include <LiteMath.h>
+#include <limits>
+
 #include "constants.h"
 #include "object.h"
 
@@ -6,20 +8,11 @@ using namespace LiteMath;
 
 namespace Object {
     /// Base ///
-    Base::Base(float3 position, float3 color, Type type) :
-        position(position), color(color), type(type) {}
-
-    /// Sphere ///
-    Sphere::Sphere(float3 position, float radius, float3 color) :
-        Base(position, color, Type::SPHERE), radius(radius) {}
-
-    /// Box ///
-    Box::Box(float3 position, float3 size, float3 color, bool inverse) :
-        Base(position, color, Type::BOX), size(size), inverse(inverse) {}
+    Base::Base(Type type) : type(type) {}
 
     /// Light ///
     Light::Light(float3 position, float3 color) :
-        Base(position, color, Type::LIGHT) {}
+        Base(Type::LIGHT), position(position), color(color) {}
 
     /// Container ///
     Container::Container() :

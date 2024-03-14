@@ -1,11 +1,11 @@
 #include <LiteMath.h>
 #include <Image2d.h>
 #include <limits>
-#include <functional>
 #include <vector>
 #include <iostream>
 
 #include "constants.h"
+#include "body.h"
 #include "object.h"
 
 using namespace LiteMath;
@@ -20,45 +20,17 @@ namespace scene {
 
 
 bool inside(float3 position) {
-    const Object::Box *box = reinterpret_cast<Object::Box*>(scene::objects.get(scene::boundsID));
+    Body::Box *box = static_cast<Body::Box*>(scene::objects.get(scene::boundsID));
     return all_of(position - box->position < box->size / 2);
 }
 
-// Calculate SDF of object depending on obj->type
-float SDFobj(float3 position, Object::Base *obj) {
-    float distance = std::numeric_limits<float>::infinity();
-    switch (obj->type) {
-        case Object::Type::SPHERE:
-        {
-            Object::Sphere *sphere = reinterpret_cast<Object::Sphere*>(obj);
-            distance = length(sphere->position - position) - sphere->radius;
-            break;
-        }
-        case Object::Type::BOX:
-        {
-            /*
-            Object::Box *box = reinterpret_cast<Object::Box*>(obj);
-            float3 distances = abs(position - box->position) - box->size / 2;
-            if (box->inverse) {
-                distance = min(distances); // not always
-            } else {
-                // ...
-            }
-            */
-            break;
-        }
-        default: break;
-    }
-    return distance;
-}
-
 // Calculate SDF from scene objects and return <active> hit object
-float SDF(float3 position, Object::Base** active = nullptr) {
+float SDF(float3 position, Body::Base** active = nullptr) {
     float result = std::numeric_limits<float>::infinity();
 
     for (auto bodyID : scene::bodyIDs) {
-        Object::Base *obj = scene::objects.get(bodyID);
-        float distance = SDFobj(position, obj);
+        Body::Base *obj = static_cast<Body::Base*>(scene::objects.get(bodyID));
+        float distance = obj->SDF(position);
 
         // Choose the closest object
         if (distance < result) {
@@ -70,14 +42,14 @@ float SDF(float3 position, Object::Base** active = nullptr) {
     return result;
 }
 
-float3 grad(std::function<float(float3, Object::Base*)> f, Object::Base* &obj, float3 p) {
+float3 grad(Body::Base* &obj, float3 p) {
     static const float h = 1e-3f;
     float3 dx = float3(h, 0.0f, 0.0f);
     float3 dy = float3(0.0f, h, 0.0f);
     float3 dz = float3(0.0f, 0.0f, h);
-    float dfdx = f(p + dx, obj) - f(p - dx, obj);
-    float dfdy = f(p + dy, obj) - f(p - dy, obj);
-    float dfdz = f(p + dz, obj) - f(p - dz, obj);
+    float dfdx = obj->SDF(p + dx) - obj->SDF(p - dx);
+    float dfdy = obj->SDF(p + dy) - obj->SDF(p - dy);
+    float dfdz = obj->SDF(p + dz) - obj->SDF(p - dz);
     return float3(dfdx, dfdy, dfdz) / (2 * h);
 }
 
@@ -86,13 +58,13 @@ void print(float3 vector) {
 }
 
 float lighting(float3 position, float3 normal) {
-    Object::Light *light = reinterpret_cast<Object::Light*>(scene::objects.get(scene::lightID));
+    Object::Light *light = static_cast<Object::Light*>(scene::objects.get(scene::lightID));
     return max(constants::saturation, dot(normal, normalize(light->position - position)));
 }
 
 float4 raymarch(float3 ray) {
     float3 position(0.0f);
-    Object::Base *obj;
+    Body::Base *obj;
     bool hit = true;
     for (int _ = 0; _ < constants::iterations; _++) {
         float distance = SDF(position, &obj);
@@ -103,7 +75,7 @@ float4 raymarch(float3 ray) {
 
     float3 color = float3(0.0f);
     if (hit) {
-        float3 normal = normalize(grad(SDFobj, obj, position));
+        float3 normal = normalize(grad(obj, position));
         float light = lighting(position, normal);
         color = light * obj->color;
     }
@@ -117,26 +89,29 @@ int main() {
     Image2D<float4> image(width, height);
 
     /// Init scene objects ///
-    Object::Box *bounds = new Object::Box ( float3(0.0f), float3(100.0f) );
+    Body::Box *bounds = new Body::Box ( float3(0.0f), float3(100.0f) );
     scene::boundsID = scene::objects.add(bounds);
 
-    Object::Light *light = new Object::Light ( float3(-15.0f, 15.0f, 15.0f) );
+    Object::Light *light = new Object::Light ( float3(50.0f, 10.0f, -20.0f) );
     scene::lightID = scene::objects.add(light);
 
     int ID;
 
     // Red
-    Object::Sphere *sphere = new Object::Sphere ( float3(2.0f, 0.0f, 25.0f), 5.0f, float3(1.0f, 0.0f, 0.0f) );
+    Body::Sphere *sphere = new Body::Sphere ( float3(2.0f, 0.0f, 25.0f), 5.0f, float3(1.0f, 0.0f, 0.0f) );
     ID = scene::objects.add(sphere);
     scene::bodyIDs.push_back(ID);
 
-    // Blue
-    sphere = new Object::Sphere ( float3(-4.0f, -3.0f, 18.0f), 5.0f, float3(0.0f, 0.0f, 1.0f) );
-    ID = scene::objects.add(sphere);
+    // Compound blue
+    Body::Sphere *sphere1 = new Body::Sphere ( float3(-4.0f, -3.0f, 15.0f), 5.0f, float3(0.0f) );
+    Body::Sphere *sphere2 = new Body::Sphere ( float3(-4.0f, -3.0f, 8.0f), 5.0f, float3(0.0f) );
+    Body::Compound *compound = new Body::Compound( sphere1, sphere2, float3(0.0f, 0.0f, 1.0f),
+            Body::Mode::DIFFERENCE );
+    ID = scene::objects.add(compound);
     scene::bodyIDs.push_back(ID);
 
     // Green
-    sphere = new Object::Sphere ( float3(15.0f, 5.0f, 45.0f), 5.0f, float3(0.0f, 1.0f, 0.0f) );
+    sphere = new Body::Sphere ( float3(15.0f, 5.0f, 45.0f), 5.0f, float3(0.0f, 1.0f, 0.0f) );
     ID = scene::objects.add(sphere);
     scene::bodyIDs.push_back(ID);
 
