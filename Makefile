@@ -45,16 +45,21 @@ LiteMath:
 
 .PHONY: syncdirs
 syncdirs:
-	for mod in $(ALLMODS); do mkdir -p $(BIN)$$mod; done
-	rsync -a --include '*/' --exclude '*' $(SRC) $(BIN)$(SRC)
+	@for mod in $(ALLMODS); do mkdir -p $(BIN)$$mod; done
+	@rsync -a --include '*/' --exclude '*' $(SRC) $(BIN)$(SRC)
 
+# TODO: custom output messages
 .PHONY: all
 all: syncdirs $(TARGET)
 
 $(TARGET): $(OBJECTS)
 	$(LD) $(LDFLAGS) -o $@ $^
 
-$(BIN)%.o: %.cpp
+# TODO: make DEPS instead
+$(BIN)$(MOD)%.o: $(MOD)%.cpp $(INC)%.h
+	$(CXX) -c $(CXXFLAGS) -o $@ $<
+
+$(BIN)$(SRC)%.o: $(SRC)%.cpp $(SRC)$(INC)%.h
 	$(CXX) -c $(CXXFLAGS) -o $@ $<
 
 # Define USE_STB_IMAGE for LiteImage
@@ -67,4 +72,4 @@ run: all
 
 .PHONY: clean
 clean:
-	rm $(OBJECTS)
+	rm -f $(OBJECTS)

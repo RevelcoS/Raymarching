@@ -1,6 +1,7 @@
 #pragma once
 
 #include <LiteMath.h>
+#include "constants.h"
 
 using namespace LiteMath;
 
@@ -10,9 +11,6 @@ namespace Object {
         BOX,
         LIGHT
     };
-
-    template <class T>
-    struct Array {};
 
     // Base class for all objects
     struct Base {
@@ -38,5 +36,16 @@ namespace Object {
 
     struct Light : Base {
         Light(float3 position, float3 color = float3(1.0f));
+    };
+
+    class Container {
+        Base* _objects[constants::capacity];
+        int _capacity;
+        int _size;
+
+    public:
+        Container();
+        int add(Base* object);  // Returns ID of stored object
+        Base* get(int ID);     // Get object by ID
     };
 }
