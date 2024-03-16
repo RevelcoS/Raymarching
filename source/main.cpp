@@ -66,7 +66,7 @@ float4 raymarch(float3 ray) {
     float3 position(0.0f);
     Body::Base *obj;
     bool hit = true;
-    for (int _ = 0; _ < constants::iterations; _++) {
+    for (int _ = 0; _ < constants::iterations::raymarch; _++) {
         float distance = SDF(position, &obj);
         position += distance * ray;
         hit = inside(position);
@@ -89,7 +89,7 @@ int main() {
     Image2D<float4> image(width, height);
 
     /// Init scene objects ///
-    Body::Box *bounds = new Body::Box ( float3(0.0f), float3(100.0f) );
+    Body::Box *bounds = new Body::Box ( float3(0.0f), float3(200.0f) );
     scene::boundsID = scene::objects.add(bounds);
 
     Object::Light *light = new Object::Light ( float3(50.0f, 10.0f, -20.0f) );
@@ -113,6 +113,12 @@ int main() {
     // Green
     sphere = new Body::Sphere ( float3(15.0f, 5.0f, 45.0f), 5.0f, float3(0.0f, 1.0f, 0.0f) );
     ID = scene::objects.add(sphere);
+    scene::bodyIDs.push_back(ID);
+
+    // Menger Sponge //
+    Body::MengerSponge *mengerSponge = new Body::MengerSponge( float3(15.0f, -15.0f, 50.0f), 10.0f,
+           constants::iterations::mengerSponge );
+    ID = scene::objects.add(mengerSponge);
     scene::bodyIDs.push_back(ID);
 
     /// Render scene objects ///

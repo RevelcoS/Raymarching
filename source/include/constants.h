@@ -5,7 +5,10 @@
 using namespace LiteMath;
 
 namespace constants {
-    const int iterations    = 1000;     // raymarcing iterations
+    namespace iterations {
+        const int raymarch        = 100;    // raymarcing iterations
+        const int mengerSponge    = 3;      // menger sponge depth iterations
+    }
     const float saturation  = 0.05f;    // lighting saturation
     const int capacity      = 1 << 10;  // Container::Array capacity
     const float precision   = 1e-3f;    // Object hit precision
