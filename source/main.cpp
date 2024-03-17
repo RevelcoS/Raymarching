@@ -2,7 +2,9 @@
 #include <Image2d.h>
 #include <limits>
 #include <vector>
+#include <chrono>
 #include <iostream>
+#include <omp.h>
 
 #include "constants.h"
 #include "body.h"
@@ -18,7 +20,7 @@ namespace scene {
     int lightID;
 }
 
-
+// Check if the position is inside of scene boundaries
 bool inside(float3 position) {
     Body::Box *box = static_cast<Body::Box*>(scene::objects.get(scene::boundsID));
     return all_of(position - box->position < box->size / 2);
@@ -83,9 +85,43 @@ float4 raymarch(float3 ray) {
     return float4(color.x, color.y, color.z, 1.0f);
 }
 
+void calculatePixel(Image2D<float4> &image, const uint width, const uint height, int2 coord) {
+    static const float AR = float(width) / height;
+
+    float u = (coord.x + 0.5) / width;
+    float v = (coord.y + 0.5) / height;
+
+    float x = lerp(-AR/2, AR/2, u);
+    float y = lerp( (float)1/2, (float)-1/2, v);
+    float z = 1.0f;
+    float3 ray = normalize( float3(x, y, z) );
+
+    float4 color = raymarch(ray);
+    image[coord] = color;
+}
+
+/// Render scene objects ///
+void renderCPU(Image2D<float4> &image, const uint width, const uint height) {
+    for (int pi = 0; pi < height; pi++) {
+        for (int pj = 0; pj < width; pj++) {
+            int2 coord(pj, pi);
+            calculatePixel(image, width, height, coord);
+        }
+    }
+}
+
+void renderOMP(Image2D<float4> &image, const uint width, const uint height) {
+    #pragma omp parallel for
+    for (int pi = 0; pi < height; pi++) {
+        for (int pj = 0; pj < width; pj++) {
+            int2 coord(pj, pi);
+            calculatePixel(image, width, height, coord);
+        }
+    }
+}
+
 int main() {
     const uint width = 768, height = 768;
-    const float AR = float(width) / height;
     Image2D<float4> image(width, height);
 
     /// Init scene objects ///
@@ -121,22 +157,22 @@ int main() {
     ID = scene::objects.add(mengerSponge);
     scene::bodyIDs.push_back(ID);
 
-    /// Render scene objects ///
-    for (int pi = 0; pi < height; pi++) {
-        for (int pj = 0; pj < width; pj++) {
-            int2 coord(pj, pi);
-            float u = (pj + 0.5) / width;
-            float v = (pi + 0.5) / height;
 
-            float x = lerp(-AR/2, AR/2, u);
-            float y = lerp( (float)1/2, (float)-1/2, v);
-            float z = 1.0f;
-            float3 ray = normalize( float3(x, y, z) );
+    /// Render time ///
+    std::chrono::time_point<std::chrono::system_clock> start, end;
+    std::chrono::duration<double> duration;
 
-            float4 color = raymarch(ray);
-            image[coord] = color;
-        }
-    }
+    start = std::chrono::system_clock::now();
+    renderCPU(image, width, height);
+    end = std::chrono::system_clock::now();
+    duration = end - start;
+    std::cout << "Rendering with CPU (1 thread):\t\t" << duration.count() << "s" << std::endl;
+
+    start = std::chrono::system_clock::now();
+    renderOMP(image, width, height);
+    end = std::chrono::system_clock::now();
+    duration = end - start;
+    std::cout << "Rendering with OpenMP (4 threads):\t" << duration.count() << "s" << std::endl;
 
     SaveImage("images/output.png", image);
 

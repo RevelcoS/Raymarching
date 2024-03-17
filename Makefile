@@ -10,11 +10,34 @@ MOD = modules/
 
 INCFLAGS  = -I$(INC) -I$(SRC)include/
 LIBFLAGS  = -L$(LIB)
+
+UNAME =
+ifeq ($(OS),Windows_NT)
+	UNAME = Windows
+else
+	UNAME = $(shell uname -s)
+endif
+
+ifeq ($(UNAME),Darwin)
+	INCFLAGS += -I/usr/local/opt/libomp/include
+	LIBFLAGS += -L/usr/local/opt/libomp/lib
+endif
+
 CXXFLAGS  = $(INCFLAGS)
 LDFLAGS   = $(LIBFLAGS)
 
+
 CXXFLAGS += -std=c++11
+CXXFLAGS += -Xpreprocessor
+CXXFLAGS += -fopenmp
 CXXFLAGS += -Wno-deprecated-declarations
+CXXFLAGS += -O2
+
+LDFLAGS += -O2
+ifeq ($(UNAME),Darwin)
+	LDFLAGS += -lomp
+endif
+
 
 SRCcpp    = $(wildcard $(SRC)*.cpp)
 OBJECTS   = $(SRCcpp:%.cpp=$(BIN)%.o)
@@ -30,7 +53,7 @@ IMAGE2Dobj  = $(IMAGE2Dcpp:%.cpp=$(BIN)%.o)
 OBJECTS    += $(IMAGE2Dobj)
 
 .PHONY: libs
-libs: stb LiteMath
+libs: stb LiteMath OpenMP
 
 .PHONY: stb
 stb:
@@ -42,6 +65,17 @@ LiteMath:
 	cp $(MATHMOD)LiteMath.h $(INC)
 	cp $(MATHMOD)Image2d.h $(INC)
 
+.PHONY: OpenMP
+OpenMP: OpenMPinstall
+	export OMP_NUM_THREADS=4
+
+.PHONY: OpenMPinstall
+ifeq ($(UNAME),Darwin)
+OpenMPinstall:
+	brew install libomp
+else
+OpenMPinstall: ;
+endif
 
 .PHONY: syncdirs
 syncdirs:

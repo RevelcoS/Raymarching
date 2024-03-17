@@ -6,7 +6,7 @@ using namespace LiteMath;
 
 namespace constants {
     namespace iterations {
-        const int raymarch        = 100;    // raymarcing iterations
+        const int raymarch        = 1000;   // raymarcing iterations
         const int mengerSponge    = 3;      // menger sponge depth iterations
     }
     const float saturation  = 0.05f;    // lighting saturation
