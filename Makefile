@@ -9,7 +9,7 @@ INC = include/
 MOD = modules/
 
 INCFLAGS  = -I$(INC) -I$(SRC)include/
-LIBFLAGS  = -L$(LIB)
+LIBFLAGS  = -L$(LIB) -lglfw.3.4
 
 UNAME =
 ifeq ($(OS),Windows_NT)
@@ -24,6 +24,7 @@ ifeq ($(UNAME),Darwin)
 endif
 
 CXXFLAGS  = $(INCFLAGS)
+CCFLAGS   = $(INCFLAGS)
 LDFLAGS   = $(LIBFLAGS)
 
 
@@ -32,6 +33,9 @@ CXXFLAGS += -Xpreprocessor
 CXXFLAGS += -fopenmp
 CXXFLAGS += -Wno-deprecated-declarations
 CXXFLAGS += -O2
+
+CCFLAGS  += -std=c17
+CCFLAGS  += -O2
 
 LDFLAGS += -O2
 ifeq ($(UNAME),Darwin)
@@ -46,11 +50,18 @@ TARGET    = $(BIN)raymarching
 ### Modules ###
 STBMOD    = $(MOD)stb/
 MATHMOD   = $(MOD)LiteMath/
-ALLMODS   = $(STBMOD) $(MATHMOD)
+GLADMOD   = $(MOD)glad/
+ALLMODS   = $(STBMOD) $(MATHMOD) $(GLADMOD)
 
+# Image2D
 IMAGE2Dcpp  = $(MATHMOD)Image2d.cpp
 IMAGE2Dobj  = $(IMAGE2Dcpp:%.cpp=$(BIN)%.o)
-OBJECTS    += $(IMAGE2Dobj)
+OBJECTS     += $(IMAGE2Dobj)
+
+# Glad
+GLADc       = $(GLADMOD)glad.c
+GLADobj     = $(GLADc:%.c=$(BIN)%.o)
+OBJECTS     += $(GLADobj)
 
 .PHONY: libs
 libs: stb LiteMath OpenMP
@@ -86,10 +97,14 @@ syncdirs:
 .PHONY: all
 all: syncdirs $(TARGET)
 
+# Target binary
 $(TARGET): $(OBJECTS)
 	$(LD) $(LDFLAGS) -o $@ $^
 
 # TODO: make DEPS instead
+$(GLADobj): $(GLADc)
+	$(CC) -c $(CCFLAGS) -o $@ $^
+
 $(BIN)$(MOD)%.o: $(MOD)%.cpp $(INC)%.h
 	$(CXX) -c $(CXXFLAGS) -o $@ $<
 
@@ -107,3 +122,7 @@ run: all
 .PHONY: clean
 clean:
 	rm -f $(OBJECTS)
+
+.PHONY: cleansrc
+cleansrc:
+	rm -rf $(BIN)$(SRC)
