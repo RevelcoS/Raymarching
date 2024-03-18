@@ -14,10 +14,11 @@
 #include <iostream>
 #include <omp.h>
 
-// Load shaders
+// Load shaders and scene
 #include <string>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 
 #include "constants.h"
 #include "body.h"
@@ -36,6 +37,69 @@ namespace scene {
 namespace gpu {
     GLFWwindow* window;
     GLuint shader;
+}
+
+void loadScene(const char *path) {
+    std::ifstream file(path);
+    std::string line;
+
+    float3 color = float3(1.0f);
+    while (std::getline(file, line)) {
+        std::istringstream input(line);
+        std::string cmd;
+        input >> cmd;
+
+        Body::Base *obj;
+        bool isBody = true;
+        if (cmd == "Sphere") {
+            float3 position;
+            float radius;
+            input >> position.x >> position.y >> position.z >> radius;
+            obj = new Body::Sphere(position, radius, color);
+        } else if (cmd == "Box") {
+            float3 position, size;
+            input >> position.x >> position.y >> position.z;
+            input >> size.x >> size.y >> size.z;
+            obj = new Body::Box(position, size, color);
+        } else if (cmd == "Cross") {
+            float3 position, size;
+            input >> position.x >> position.y >> position.z;
+            input >> size.x >> size.y >> size.z;
+            obj = new Body::Cross(position, size, color);
+        } else if (cmd == "DeathStar") {
+            float3 position;
+            float radius;
+            input >> position.x >> position.y >> position.z >> radius;
+            obj = Body::DeathStar(position, radius, color);
+        } else if (cmd == "MengerSponge") {
+            float3 position;
+            float size;
+            int iterations;
+            input >> position.x >> position.y >> position.z >> size >> iterations;
+            obj = Body::MengerSponge(position, size, iterations);
+        } else isBody = false;
+
+        if (isBody) {
+            int ID = scene::objects.add(obj);
+            scene::bodyIDs.push_back(ID);
+            continue;
+        }
+
+        if (cmd == "Bounds") {
+            float size;
+            input >> size;
+            Body::Box *bounds = new Body::Box (float3(0.0f), float3(size));
+            scene::boundsID = scene::objects.add(bounds);
+        } else if (cmd == "Light") {
+            float3 position;
+            input >> position.x >> position.y >> position.z;
+            Object::Light *light = new Object::Light (position);
+            scene::lightID = scene::objects.add(light);
+        } else if (cmd == "Color") {;
+            input >> color.x >> color.y >> color.z;
+        }
+
+    }
 }
 
 // Check if the position is inside of scene boundaries
@@ -291,40 +355,11 @@ int main() {
     Image2D<float4> image(width, height);
 
     /// Init scene objects ///
-    Body::Box *bounds = new Body::Box ( float3(0.0f), float3(200.0f) );
-    scene::boundsID = scene::objects.add(bounds);
-
-    Object::Light *light = new Object::Light ( float3(50.0f, 10.0f, -20.0f) );
-    scene::lightID = scene::objects.add(light);
-
-    int ID;
-
-    // Red
-    Body::Sphere *sphere = new Body::Sphere ( float3(2.0f, 0.0f, 25.0f), 5.0f, float3(1.0f, 0.0f, 0.0f) );
-    ID = scene::objects.add(sphere);
-    scene::bodyIDs.push_back(ID);
-
-    // Compound blue
-    Body::Sphere *sphere1 = new Body::Sphere ( float3(-4.0f, -3.0f, 15.0f), 5.0f, float3(0.0f) );
-    Body::Sphere *sphere2 = new Body::Sphere ( float3(-4.0f, -3.0f, 8.0f), 5.0f, float3(0.0f) );
-    Body::Compound *compound = new Body::Compound( sphere1, sphere2, float3(0.0f, 0.0f, 1.0f),
-            Body::Mode::DIFFERENCE );
-    ID = scene::objects.add(compound);
-    scene::bodyIDs.push_back(ID);
-
-    // Green
-    sphere = new Body::Sphere ( float3(15.0f, 5.0f, 45.0f), 5.0f, float3(0.0f, 1.0f, 0.0f) );
-    ID = scene::objects.add(sphere);
-    scene::bodyIDs.push_back(ID);
-
-    // Menger Sponge //
-    Body::MengerSponge *mengerSponge = new Body::MengerSponge( float3(15.0f, -15.0f, 50.0f), 10.0f,
-           constants::iterations::mengerSponge );
-    ID = scene::objects.add(mengerSponge);
-    scene::bodyIDs.push_back(ID);
-
+    std::cout << "...Loading scene" << std::endl;
+    loadScene("scene/objects.txt");
 
     /// Render time ///
+    std::cout << "...Rendering" << std::endl;
     std::chrono::time_point<std::chrono::system_clock> start, end;
     std::chrono::duration<double> duration;
 

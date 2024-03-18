@@ -60,94 +60,96 @@ namespace Body {
         return std::numeric_limits<float>::infinity();
     }
 
-    /// Menger Sponge ///
-    MengerSponge::MengerSponge(float3 position, float size, int iterations,
-                               float3 color, Mode mode) :
-        Base(Type::MENGER_SPONGE, mode, color),
-        position(position), size(size), iterations(iterations) {
-
-        Box *box = new Box(position, float3(size), color, mode);
-        Compound *diff = this->generate(position, size, iterations);
-        this->body = new Compound(box, diff, color, Mode::DIFFERENCE);
-    }
-
-    float MengerSponge::SDF(float3 position) {
-        return this->body->SDF(position);
-    }
-
-    Compound* MengerSponge::generate(float3 position, float size, int iterations) {
+    /// Menger Sponge /// 
+    Compound* generateMengerSponge(float3 position, float size, int iterations,
+            float3 color, Mode mode) {
         float d = size / 3;
-        Cross *cross = new Cross(position, float3(d), this->color, this->mode);
+        Cross *cross = new Cross(position, float3(d), color, mode);
         Empty *empty = new Empty();
-        Compound *result = new Compound(cross, empty, this->color, this->mode);
+        Compound *result = new Compound(cross, empty, color, mode);
         if (iterations >= 2) {
             Compound *recursive;
 
             // Front
-            recursive = this->generate(position + float3(d, -d, -d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(d, -d, -d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(0, -d, -d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(0, -d, -d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(-d, -d, -d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(-d, -d, -d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(d, d, -d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(d, d, -d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(0, d, -d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(0, d, -d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(-d, d, -d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(-d, d, -d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(-d, 0, -d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(-d, 0, -d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(d, 0, -d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(d, 0, -d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
             // Back
-            recursive = this->generate(position + float3(d, -d, d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(d, -d, d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(0, -d, d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(0, -d, d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(-d, -d, d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(-d, -d, d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(d, d, d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(d, d, d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(0, d, d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(0, d, d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(-d, d, d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(-d, d, d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(-d, 0, d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(-d, 0, d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(d, 0, d), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(d, 0, d), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
             // Middle
-            recursive = this->generate(position + float3(-d, -d, 0), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(-d, -d, 0), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(d, -d, 0), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(d, -d, 0), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(-d, d, 0), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(-d, d, 0), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
 
-            recursive = this->generate(position + float3(d, d, 0), d, iterations - 1);
-            result = new Compound(result, recursive, this->color, this->mode);
+            recursive = generateMengerSponge(position + float3(d, d, 0), d, iterations - 1, color, mode);
+            result = new Compound(result, recursive, color, mode);
         }
 
         return result;
+    }
+
+    Compound* MengerSponge(float3 position, float size, int iterations,
+            float3 color, Mode mode) {
+        Box *box = new Box(position, float3(size), color, mode);
+        Compound *diff = generateMengerSponge(position, size, iterations, color, mode);
+        return new Compound(box, diff, color, Mode::DIFFERENCE);
+    }
+
+    /// Death Star ///
+    Compound* DeathStar(float3 position, float radius, float3 color, Mode mode) {
+        Sphere *sphere = new Sphere(position, radius, color, mode);
+        float3 diffposition = float3(position.x, position.y, position.z - 1.5f * radius);
+        Sphere *diff = new Sphere(diffposition, radius, color, mode);
+        return new Compound(sphere, diff, color, Mode::DIFFERENCE);
     }
 
     /// Compound ///
