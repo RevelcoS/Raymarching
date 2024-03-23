@@ -126,3 +126,8 @@ clean:
 .PHONY: cleansrc
 cleansrc:
 	rm -rf $(BIN)$(SRC)
+
+# For fun
+.PHONY: lines
+lines:
+	wc -l source/*.cpp source/include/*.h source/shaders/* scene/objects.txt Makefile
