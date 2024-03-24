@@ -22,6 +22,12 @@ namespace Body {
         DIFFERENCE,
     };
 
+    struct Surface {
+        float SD;
+        float3 color;
+        //friend bool operator<(const Surface &lhs, const Surface &rhs);
+    };
+
     struct Base : Object::Base {
         Type type;
         Mode mode;
@@ -29,7 +35,7 @@ namespace Body {
         Base(Type type,
              Mode mode = Mode::DEFAULT,
              float3 color = float3(1.0f));
-        virtual float SDF(float3 position);
+        virtual Surface SDF(float3 position);
         float complement(float distance);
     };
 
@@ -40,7 +46,7 @@ namespace Body {
                float radius,
                float3 color = float3(1.0f),
                Mode mode = Mode::DEFAULT);
-        float SDF(float3 position);
+        Surface SDF(float3 position);
     };
 
     struct Box : Base {
@@ -50,7 +56,7 @@ namespace Body {
             float3 size,
             float3 color = float3(1.0f),
             Mode mode = Mode::DEFAULT);
-        float SDF(float3 position);
+        Surface SDF(float3 position);
     };
 
     struct Cross: Base {
@@ -60,12 +66,11 @@ namespace Body {
               float3 size,
               float3 color = float3(1.0f),
               Mode mode = Mode::DEFAULT);
-        float SDF(float3 position);
+        Surface SDF(float3 position);
     };
 
     struct Empty : Base {
-        Empty();
-        float SDF(float3 position);
+        Empty(void);
     };
 
     struct Compound : Base {
@@ -76,7 +81,14 @@ namespace Body {
                  Base *second,
                  float3 color = float3(1.0f),
                  Mode mode = Mode::UNION);
-        float SDF(float3 position);
+        Surface SDF(float3 position);
+    };
+
+    struct Tree {
+        Compound *root;
+        Tree(void);
+        void add(Base *body);
+        Surface SDF(float3 position);
     };
 
     // Generators

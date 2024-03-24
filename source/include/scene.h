@@ -15,7 +15,7 @@ namespace scene {
     extern int lightID;
     bool inside(float3 position);
     float lighting(float3 position, float3 normal);
-    float SDF(float3 position, Body::Base** active = nullptr);
-    float3 grad(Body::Base* &obj, float3 p);
+    Body::Surface SDF(float3 position);
+    float3 grad(float3 position);
     void load(const char *path);
 };

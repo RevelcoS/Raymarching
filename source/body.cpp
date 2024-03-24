@@ -8,12 +8,22 @@
 using namespace LiteMath;
 
 namespace Body {
+    /// Surface ///
+    bool operator<(const Surface &lsurface, const Surface &rsurface) {
+        return lsurface.SD < rsurface.SD;
+    }
+
+    Surface operator-(const Surface &surface) {
+        return { .SD = -surface.SD, .color = surface.color };
+    }
+
     /// Base ///
     Base::Base(Type type, Mode mode, float3 color) :
         Object::Base(Object::Type::BODY), type(type), mode(mode), color(color) {}
 
-    float Base::SDF(float3 position) {
-        return std::numeric_limits<float>::infinity();
+    Surface Base::SDF(float3 position) {
+        float distance = std::numeric_limits<float>::infinity();
+        return { .SD = distance, .color = this->color };
     }
 
     float Base::complement(float distance) {
@@ -26,39 +36,35 @@ namespace Body {
     Sphere::Sphere(float3 position, float radius, float3 color, Mode mode) :
         Base(Type::SPHERE, mode, color), position(position), radius(radius) {}
 
-    float Sphere::SDF(float3 position) {
+    Surface Sphere::SDF(float3 position) {
         float distance = length(this->position - position) - this->radius;
-        return this->complement(distance);
+        return { .SD = this->complement(distance), .color = this->color };
     }
 
     /// Box ///
     Box::Box(float3 position, float3 size, float3 color, Mode mode) :
         Base(Type::BOX, mode, color), position(position), size(size) {}
 
-    float Box::SDF(float3 position) {
+    Surface Box::SDF(float3 position) {
         float3 distances = abs(position - this->position) - this->size / 2;
         float distance = max(max(distances.x, distances.y), distances.z);
-        return this->complement(distance);
+        return { .SD = this->complement(distance), .color = this->color };
     }
 
     /// Cross ///
     Cross::Cross(float3 position, float3 size, float3 color, Mode mode) :
         Base(Type::CROSS, mode, color), position(position), size(size) {}
 
-    float Cross::SDF(float3 position) {
+    Surface Cross::SDF(float3 position) {
         float3 distances = abs(position - this->position) - this->size / 2;
         float dmin = min(min(distances.x, distances.y), distances.z);
         float dmax = max(max(distances.x, distances.y), distances.z);
         float distance = distances.x + distances.y + distances.z - dmin - dmax;
-        return this->complement(distance);
+        return { .SD = this->complement(distance), .color = this->color };
     }
 
     /// Empty ///
     Empty::Empty() : Base(Type::EMPTY, Mode::DEFAULT, float3(0.0f)) {}
-
-    float Empty::SDF(float3 position) {
-        return std::numeric_limits<float>::infinity();
-    }
 
     /// Menger Sponge /// 
     Compound* generateMengerSponge(float3 position, float size, int iterations,
@@ -152,42 +158,59 @@ namespace Body {
         return new Compound(sphere, diff, color, Mode::DIFFERENCE);
     }
 
+    /// Tree ///
+    Tree::Tree() {
+        Empty *left = new Empty();
+        Empty *right = new Empty();
+        this->root = new Compound(left, right);
+    }
+
+    void Tree::add(Base *body) {
+        this->root = new Compound(this->root, body);
+    }
+
+    Surface Tree::SDF(float3 position) {
+        return this->root->SDF(position);
+    }
+
     /// Compound ///
     Compound::Compound(Base *first, Base *second, float3 color, Mode mode) :
         Base(Type::COMPOUND, mode, color), first(first), second(second), mode(mode) {}
 
-    float Compound::SDF(float3 position) {
+    Surface Compound::SDF(float3 position) {
         float distance = std::numeric_limits<float>::infinity();
-        float d1 = first->SDF(position);
-        float d2 = second->SDF(position);
+        Surface surface { .SD = distance, .color = this->color };
+        Surface s1 = first->SDF(position);
+        Surface s2 = second->SDF(position);
         switch (this->mode) {
             case Mode::DEFAULT:
             case Mode::UNION:
             {
-                distance = min(d1, d2);
+                surface = min(s1, s2);
                 break;
             }
 
             case Mode::COMPLEMENT:
             {
-                distance = min(-d1, -d2);
+                surface = min(-s1, -s2);
+                break;
             }
 
             case Mode::INTERSECTION:
             {
-                distance = max(d1, d2);
+                surface = max(s1, s2);
                 break;
             }
 
             case Mode::DIFFERENCE:
             {
-                distance = max(d1, -d2);
+                surface = max(s1, -s2);
                 break;
             }
 
             defaut: break;
         }
 
-        return distance;
+        return surface;
     }
 }

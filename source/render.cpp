@@ -51,20 +51,20 @@ namespace render {
 // Calculate the color produced by ray
 float4 render::raymarch(float3 ray) {
     float3 position(0.0f);
-    Body::Base *obj;
+    Body::Surface surface {};
     bool hit = true;
     for (int _ = 0; _ < constants::iterations; _++) {
-        float distance = scene::SDF(position, &obj);
-        position += distance * ray;
+        surface = scene::SDF(position);
+        position += surface.SD * ray;
         hit = scene::inside(position);
-        if (!hit || distance < constants::precision) break;
+        if (!hit || surface.SD < constants::precision) break;
     }
 
     float3 color = float3(0.0f);
     if (hit) {
-        float3 normal = normalize(scene::grad(obj, position));
+        float3 normal = normalize(scene::grad(position));
         float light = scene::lighting(position, normal);
-        color = light * obj->color;
+        color = light * surface.color;
     }
 
     return float4(color.x, color.y, color.z, 1.0f);
