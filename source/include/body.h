@@ -25,7 +25,6 @@ namespace Body {
     struct Surface {
         float SD;
         float3 color;
-        //friend bool operator<(const Surface &lhs, const Surface &rhs);
     };
 
     struct Base : Object::Base {

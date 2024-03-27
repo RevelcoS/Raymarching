@@ -36,12 +36,23 @@ namespace render {
     GLuint RBO, FBO;
     static void genbuffers(const uint width, const uint height);
 
+    GLuint SphereUBO;
+
     namespace shader {
         GLuint program;
         static GLuint load(const char *path, GLenum type);
         static GLuint link(GLuint vertex, GLuint fragment);
         static void log(GLuint shader, GLenum status, GLenum type = 0);
     };
+
+    // Plain structs to store scene in GPU
+    namespace GPUbody {
+        struct Sphere {
+            float position[4];
+            float radius[4];
+            float color[4];
+        };
+    }
 }
 
 ///////////////////////////////////////////
@@ -249,6 +260,7 @@ void render::setup(const uint width, const uint height) {
     /// Link program ///
     render::shader::program = render::shader::link(vertex, fragment);
     render::shader::log(render::shader::program, GL_LINK_STATUS);
+    glUseProgram(render::shader::program);
 
     /// Generate buffers ///
     render::genbuffers(width, height);
@@ -267,6 +279,31 @@ void render::push(void) {
     };
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+
+    /// Body UBOs ///
+    constexpr int sphereTotal = 3;
+
+    GLuint location = glGetUniformLocation(render::shader::program, "sphereTotal");
+    glUniform1i(location, sphereTotal);
+
+    render::GPUbody::Sphere sphere[sphereTotal] = {
+        { { 2.0f, 3.0f, 30.0f, 1.0f }, { 5.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
+        { { 15.0f, 8.0f, 45.0f, 1.0f }, { 5.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
+        { {-5.0f, -2.0f, 20.0f, 5.0f }, { 5.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
+    };
+
+    glGenBuffers(1, &render::SphereUBO);
+    glBindBuffer(GL_UNIFORM_BUFFER, render::SphereUBO);
+    glBufferData(GL_UNIFORM_BUFFER, sizeof(sphere), NULL, GL_STATIC_DRAW);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+
+    GLuint blockIndex = glGetUniformBlockIndex(render::shader::program, "Spheres");
+    glUniformBlockBinding(render::shader::program, blockIndex, 0);
+    glBindBufferRange(GL_UNIFORM_BUFFER, 0, render::SphereUBO, 0, sizeof(sphere));
+
+    glBindBuffer(GL_UNIFORM_BUFFER, render::SphereUBO);
+    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(sphere), sphere);
+    glBindBuffer(GL_UNIFORM_BUFFER, 0);
 }
 
 void render::GPU(unsigned char *image, const uint width, const uint height) {
