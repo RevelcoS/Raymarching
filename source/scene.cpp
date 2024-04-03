@@ -17,7 +17,7 @@ using namespace LiteMath;
 
 // TODO: free objects when process finished
 namespace scene {
-    Body::Tree *tree;
+    Body::List *tree;
     Object::Light *light;
     Body::Box *bounds;
 }
@@ -61,7 +61,7 @@ float3 scene::grad(float3 p) {
 
 // Load scene objects from path
 void scene::load(const char *path) {
-    scene::tree = new Body::Tree();
+    scene::tree = new Body::List();
 
     std::ifstream file(path);
     std::string line;
@@ -99,11 +99,11 @@ void scene::load(const char *path) {
             float size;
             int iterations;
             input >> position.x >> position.y >> position.z >> size >> iterations;
-            obj = Body::MengerSponge(position, size, iterations);
+            obj = Body::MengerSponge(position, size, iterations, color);
         } else isBody = false;
 
         if (isBody) {
-            scene::tree->add(obj);
+            scene::tree->append(obj);
             continue;
         }
 

@@ -9,10 +9,9 @@
 using namespace LiteMath;
 
 namespace scene {
-    extern Object::Container objects;
-    extern std::vector<int> bodyIDs;
-    extern int boundsID;
-    extern int lightID;
+    extern Body::List *tree;
+    extern Object::Light *light;
+    extern Body::Box *bounds;
     bool inside(float3 position);
     float lighting(float3 position, float3 normal);
     Body::Surface SDF(float3 position);

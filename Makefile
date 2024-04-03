@@ -61,7 +61,7 @@ LiteMath:
 	cp $(MATHMOD)Image2d.h $(INC)
 
 .PHONY: OpenMP
-OpenMP: OpenMPinstall
+OpenMP:
 	export OMP_NUM_THREADS=4
 
 .PHONY: syncdirs
