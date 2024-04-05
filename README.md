@@ -1,35 +1,62 @@
-# Raymarching V1.0
-Render 3D objects using raymarching algorithm.
+# Raymarching V1.1
+
+Render 3D objects using raymarching algorithm.  
+
+![Rendered on GPU](https://github.com/RevelcoS/Raymarching/raw/master/out_gpu.png)
+
+## Features
+
+* Windows support
+* GPU rendering
+* CPU faster rendering
 
 ## Setup
-The project setup is only available on OSX.
-Also, make sure [brew](https://formulae.brew.sh/) is installed, the project uses [libomp](https://formulae.brew.sh/formula/libomp) library.
+
+Note: MacOS support is deprecated.  
+The project setup is only available on Windows under [MSYS2](https://www.msys2.org/) UCRT64 environment.  
+
+Download dependencies:
+
+```sh
+./libs.sh
+```
+
 Download dependencies from GitHub:
+
 ```sh
-$ git submodule init && git submodule update
+git submodule init && git submodule update
 ```
-Setup libraries (LiteMath, stb, libomp):
+
+Setup libraries (LiteMath, stb):
+
 ```sh
-$ make libs
+make libs
 ```
+
 Build the project:
+
 ```sh
-$ make all
+make all
 ```
 
 ## Render
+
 To run the project execute:
+
 ```sh
-$ make run
+make run
 ```
+
 Rendering initial scene might take ~1 min.  
 For faster rendering change
 MengerSponge iterations in scene file to `2`.
 
 ## Scene
+
 To render your own scene modify `scene/objects.txt`.  
 Objects description:
-```
+
+```txt
 Bounds <float>size
 Light <float3>position
 Color <float3>color
@@ -41,14 +68,15 @@ MengerSponge <float3>position <float>size <int>iterations
 ```
 
 ## Runtime
-CPU: 2,5GHz quad-core Intel Core i7  
-Memory: 16GB 1600MHz DDR3  
-Graphics: Intel Iris Pro 1536MB  
-```sh
-Rendering with CPU (1 thread):		68.1477s
-Rendering with OpenMP (4 threads):	21.9033s
-Rendering with GPU (sphere):		0.031496s
-```
 
-## Work in progress...
-The GPU implentation is not done yet
+CPU: Intel Core i5-13500H 2.60GHz  
+Memory: 16GB 4800MHz LPDDR5  
+GPU: Intel Iris Xe Graphics  
+
+```sh
+Render with CPU (1 thread):     31.2233s
+Render with OpenMP (4 threads): 4.60926s
+Render with GPU:                2.43829s
+Copy to GPU:                    0.0049152s
+Render + Copy on GPU:           2.44321s
+```
