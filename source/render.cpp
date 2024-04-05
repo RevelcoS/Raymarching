@@ -9,6 +9,9 @@
 #include <fstream>
 #include <iostream>
 
+// SSBOs
+#include <cstring>
+
 // Parallel processing
 #include <omp.h>
 
@@ -34,25 +37,43 @@ namespace render {
     GLuint VBO, VAO;
     GLuint texture;
     GLuint RBO, FBO;
-    static void genbuffers(const uint width, const uint height);
 
-    GLuint SphereUBO;
+    GLuint bodySSBO;
+    GLuint treeSSBO;
+    static void genbuffers(const uint width, const uint height);
+    static uint type(Body::Type type);
+    static uint mode(Body::Mode mode);
+    static void genssbo(const char *name, GLuint &ssbo, uint binding);
+    static void pushssbo(GLuint ssbo, void *data, size_t size);
 
     namespace shader {
         GLuint program;
         static GLuint load(const char *path, GLenum type);
         static GLuint link(GLuint vertex, GLuint fragment);
         static void log(GLuint shader, GLenum status, GLenum type = 0);
-    };
 
-    // Plain structs to store scene in GPU
-    namespace GPUbody {
-        struct Sphere {
-            float position[4];
-            float radius[4];
-            float color[4];
+        struct Body {
+            float data[4 * constants::gpu::bodyElements];
         };
-    }
+
+        // List Node
+        struct Node {
+            uint type[4]; // Mode OR Type
+            uint ID[4];   // Total OR ID
+        };
+
+        // Stack Item
+        struct Item {
+            uint ID[4];
+            uint offset[4];
+        };
+
+        static void packbody(::Body::Base *in, Body *out);
+        static void genscene(
+            Body bodies[constants::gpu::bodyTypes * constants::gpu::bodyMax],
+            Node tree[constants::gpu::listEntries * constants::gpu::listMax],
+            Item stack[constants::gpu::stackMax]);
+    };
 }
 
 ///////////////////////////////////////////
@@ -211,6 +232,27 @@ GLFWwindow* render::context(const uint width, const uint height) {
     return window;
 }
 
+uint render::type(Body::Type type) {
+    return static_cast<uint>(type);
+}
+
+uint render::mode(Body::Mode mode) {
+    return static_cast<uint>(mode);
+}
+
+void render::genssbo(const char *name, GLuint &ssbo, uint binding) {
+    glGenBuffers(1, &ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBindBufferBase(GL_SHADER_STORAGE_BUFFER, binding, ssbo);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
+void render::pushssbo(GLuint ssbo, void *data, size_t size) {
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo);
+    glBufferData(GL_SHADER_STORAGE_BUFFER, size, data, GL_STATIC_DRAW);
+    glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
+}
+
 void render::genbuffers(const uint width, const uint height) {
     /// Generate VAO and VBO ///
     glGenBuffers(1, &render::VBO);
@@ -266,6 +308,109 @@ void render::setup(const uint width, const uint height) {
     render::genbuffers(width, height);
 }
 
+void render::shader::packbody(::Body::Base *in, render::shader::Body *out) {
+    switch (in->type) {
+        case ::Body::Type::SPHERE:
+        {
+            ::Body::Sphere *obj = static_cast<::Body::Sphere*>(in);
+            std::memcpy(out->data, obj->position.M, sizeof(obj->position.M));
+            std::memcpy(out->data + 4, &obj->radius, sizeof(obj->radius));
+            std::memcpy(out->data + 8, obj->color.M, sizeof(obj->color.M));
+            break;
+        }
+        case ::Body::Type::BOX:
+        {
+            ::Body::Box *obj = static_cast<::Body::Box*>(in);
+            std::memcpy(out->data, obj->position.M, sizeof(obj->position.M));
+            std::memcpy(out->data + 4, obj->size.M, sizeof(obj->size.M));
+            std::memcpy(out->data + 8, obj->color.M, sizeof(obj->color.M));
+            break;
+        }
+        case ::Body::Type::CROSS:
+        {
+            ::Body::Cross *obj = static_cast<::Body::Cross*>(in);
+            std::memcpy(out->data, obj->position.M, sizeof(obj->position.M));
+            std::memcpy(out->data + 4, obj->size.M, sizeof(obj->size.M));
+            std::memcpy(out->data + 8, obj->color.M, sizeof(obj->color.M));
+            break;
+        }
+        default: break;
+    }
+}
+
+void render::shader::genscene(
+    render::shader::Body bodies[constants::gpu::bodyTypes * constants::gpu::bodyMax],
+    render::shader::Node tree[constants::gpu::listEntries * constants::gpu::listMax],
+    render::shader::Item stack[constants::gpu::stackMax]) {
+    ::Body::List* liststack[constants::gpu::stackMax];
+
+    size_t bodySize[constants::gpu::bodyTypes];
+    std::memset(bodySize, 0, sizeof(bodySize));
+    size_t treeSize = 1;
+    size_t stackSize = 1;
+
+    render::shader::Node node { .type = { render::mode(scene::tree->mode) }, .ID = { 0U } }; // Metadata: Mode, Size
+    tree[0] = node;
+    render::shader::Node *entry = tree;
+
+    render::shader::Item item { .ID = { 0U }, .offset = { 0U } };
+    stack[0] = item;
+    render::shader::Item *top = stack;
+
+    ::Body::List *list = scene::tree;
+    liststack[0] = list;
+
+    ::Body::Base *body;
+    render::shader::Body gpuBody;
+
+    while (stackSize > 0) {
+        top = &stack[stackSize - 1];
+        list = liststack[stackSize - 1];
+        uint listOffset = ++(top->offset[0]);
+        uint listID = top->ID[0];
+        if (listOffset > list->bodies.size()) {
+            stackSize--; continue;
+        }
+
+        entry = tree + listID * constants::gpu::listMax;
+        body = list->bodies[listOffset - 1];
+        uint type = render::type(body->type);
+        entry[0].ID[0] = listOffset;
+        if (body->type == ::Body::Type::LIST) {
+            // Update the stacks
+            liststack[stackSize] = static_cast<::Body::List*>(body);
+            item.ID[0] = treeSize;
+            item.offset[0] = 0U;
+            stack[stackSize] = item;
+
+            // Push body node to the list
+            node.type[0] = type;
+            node.ID[0] = treeSize;
+            entry[listOffset] = node;
+
+            // Update new list metadata
+            list = liststack[stackSize];
+            uint mode = render::mode(list->mode);
+
+            entry = tree + treeSize * constants::gpu::listMax;
+            node.type[0] = mode;
+            node.ID[0] = 0U;
+            entry[0] = node;
+
+            stackSize++; treeSize++;
+        } else {
+            // Update the bodies
+            render::shader::packbody(body, &gpuBody);
+            bodies[type * constants::gpu::bodyMax + bodySize[type]] = gpuBody;
+
+            // Push body node to the list
+            node.type[0] = type;
+            node.ID[0] = bodySize[type]++;
+            entry[listOffset] = node;
+        }
+    }
+}
+
 void render::push(void) {
     /// Screen space triangles ///
     float vertices[] = {
@@ -280,30 +425,18 @@ void render::push(void) {
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
-    /// Body UBOs ///
-    constexpr int sphereTotal = 3;
+    /// Generate and fill SSBOs ///
+    render::genssbo("Bodies", render::bodySSBO, 0);
+    render::genssbo("Tree", render::treeSSBO, 1);
 
-    GLuint location = glGetUniformLocation(render::shader::program, "sphereTotal");
-    glUniform1i(location, sphereTotal);
+    auto bodies = new render::shader::Body[constants::gpu::bodyTypes * constants::gpu::bodyMax];
+    auto tree = new render::shader::Node[constants::gpu::listEntries * constants::gpu::listMax];
+    auto stack = new render::shader::Item[constants::gpu::stackMax];
 
-    render::GPUbody::Sphere sphere[sphereTotal] = {
-        { { 2.0f, 3.0f, 30.0f, 1.0f }, { 5.0f }, { 1.0f, 0.0f, 0.0f, 1.0f } },
-        { { 15.0f, 8.0f, 45.0f, 1.0f }, { 5.0f }, { 0.0f, 1.0f, 0.0f, 1.0f } },
-        { {-5.0f, -2.0f, 20.0f, 5.0f }, { 5.0f }, { 0.0f, 0.0f, 1.0f, 1.0f } },
-    };
+    render::shader::genscene(bodies, tree, stack);
 
-    glGenBuffers(1, &render::SphereUBO);
-    glBindBuffer(GL_UNIFORM_BUFFER, render::SphereUBO);
-    glBufferData(GL_UNIFORM_BUFFER, sizeof(sphere), NULL, GL_STATIC_DRAW);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
-
-    GLuint blockIndex = glGetUniformBlockIndex(render::shader::program, "Spheres");
-    glUniformBlockBinding(render::shader::program, blockIndex, 0);
-    glBindBufferRange(GL_UNIFORM_BUFFER, 0, render::SphereUBO, 0, sizeof(sphere));
-
-    glBindBuffer(GL_UNIFORM_BUFFER, render::SphereUBO);
-    glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(sphere), sphere);
-    glBindBuffer(GL_UNIFORM_BUFFER, 0);
+    render::pushssbo(render::bodySSBO, bodies, constants::gpu::bodyTypes * constants::gpu::bodyMax * sizeof(*bodies));
+    render::pushssbo(render::treeSSBO, tree, constants::gpu::listEntries * constants::gpu::listMax * sizeof(*tree));
 }
 
 void render::GPU(unsigned char *image, const uint width, const uint height) {

@@ -8,11 +8,10 @@ using namespace LiteMath;
 
 namespace Body {
     enum class Type : uint {
-        EMPTY       = 0,
-        LIST        = 1,
-        SPHERE      = 2,
-        BOX         = 3,
-        CROSS       = 4,
+        LIST        = 0,
+        SPHERE      = 1,
+        BOX         = 2,
+        CROSS       = 3,
     };
 
     enum class Mode : uint {

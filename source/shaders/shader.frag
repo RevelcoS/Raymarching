@@ -1,11 +1,26 @@
 #version 430 core
 
-#define MAX 1 << 10
+#define BODY_ELEMENTS   4               // Length of Body struct vec4 array
+#define BODY_TYPES      20              // Limit number of Body Types
+#define BODY_MAX        (1 << 10)       // Amount of Bodies array contains
+#define LIST_ENTRIES    (1 << 6)        // Number of Lists
+#define LIST_MAX        (1 << 10)       // Amount of Nodes List contains
+#define STACK_MAX       (1 << 6)        // Amount of Items in Stack
 
 out vec4 outColor;
 
 in vec2 uv;
 
+int iterations = 1000;
+float saturation = 0.05f;
+float hitPrecision = 1e-3f;
+
+vec3 boundsPosition = vec3(0.0f);
+vec3 bounds = vec3(200.0f);
+
+vec3 lightPosition = vec3(50.0f, 10.0f, -20.0f);
+
+/// Scene Bodies ///
 struct Surface {
     float SD;
     vec3 color;
@@ -17,19 +32,161 @@ struct Sphere {
     vec4 color;
 };
 
-layout (std140) uniform Spheres {
-    Sphere sphere[MAX];
+struct Box {
+    vec4 position;
+    vec4 size;
+    vec4 color;
 };
-uniform int sphereTotal;
 
-int iterations = 1000;
-float saturation = 0.05f;
+struct Cross {
+    vec4 position;
+    vec4 size;
+    vec4 color;
+};
 
-vec3 boundsPosition = vec3(0.0f);
-vec3 bounds = vec3(200.0f);
+/// SSBO elements ///
+struct Body {
+    vec4 data[BODY_ELEMENTS];
+};
 
-vec3 lightPosition = vec3(50.0f, 10.0f, -20.0f);
+// List Node
+struct Node {
+    uvec4 type; // Mode OR Type
+    uvec4 ID;   // Total OR ID
+};
 
+/// SSBOs ///
+layout (std430, binding = 0) buffer Bodies {
+    Body bodies[BODY_TYPES * BODY_MAX];
+};
+
+layout (std430, binding = 1) buffer Tree {
+    Node tree[LIST_ENTRIES * LIST_MAX];
+};
+
+/// Stack ///
+struct Item {
+    uint ID;
+    uint offset;
+    Surface surface;
+};
+
+Item stack[STACK_MAX];
+uint size = 0;
+
+void stackClear() {
+    size = 0;
+}
+
+bool stackEmpty() {
+    return size == 0;
+}
+
+void stackPush(Item item) {
+    stack[size++] = item;    
+}
+
+Item stackPop() {
+    return stack[--size];
+}
+
+/// List & Body operations ///
+Node listPull(uint ID, uint offset) {
+    return tree[ID * LIST_MAX + offset];
+}
+
+Node listMeta(uint ID) {
+    return tree[ID * LIST_MAX];
+}
+
+bool listIsBase(uint offset) {
+    return offset == 1;
+}
+
+Body bodyPull(uint type, uint ID) {
+    return bodies[type * BODY_MAX + ID];
+}
+
+/// Surface operations ///
+Surface opUnion(Surface s1, Surface s2) {
+    if (s1.SD < s2.SD) {
+        return s1;
+    }
+    return s2;
+}
+
+Surface opComplement(Surface s) {
+    return Surface(-s.SD, s.color);
+}
+
+Surface opUComplement(Surface s1, Surface s2) {
+    return opUnion(s1, opComplement(s2));
+}
+
+Surface opIntersection(Surface s1, Surface s2) {
+    if (s1.SD > s2.SD) {
+        return s1;
+    }
+    return s2;
+}
+
+Surface opDifference(Surface s1, Surface s2) {
+    return opIntersection(s1, opComplement(s2));
+}
+
+/// Body SDFs ///
+Surface sphereSDF(Sphere obj, vec3 position) {
+    float sd = length(obj.position.xyz - position) - obj.radius.x;
+    return Surface(sd, obj.color.xyz);
+}
+
+Surface boxSDF(Box obj, vec3 position) {
+    vec3 distances = abs(position - obj.position.xyz) - obj.size.xyz / 2;
+    float sd = max(max(distances.x, distances.y), distances.z);
+    return Surface(sd, obj.color.xyz);
+}
+
+Surface crossSDF(Cross obj, vec3 position) {
+    vec3 distances = abs(position - obj.position.xyz) - obj.size.xyz / 2;
+    float dmin = min(min(distances.x, distances.y), distances.z);
+    float dmax = max(max(distances.x, distances.y), distances.z);
+    float sd = distances.x + distances.y + distances.z - dmin - dmax;
+    return Surface(sd, obj.color.xyz);
+}
+
+Surface emptySDF() {
+    return Surface( 1.0f / 0.0f, vec3(1.0f) );
+}
+
+Surface bodySDF(uint type, Body body, vec3 position) {
+    if (type == 1) {
+        Sphere obj = Sphere(body.data[0], body.data[1], body.data[2]);
+        return sphereSDF(obj, position);
+    } else if (type == 2) {
+        Box obj = Box(body.data[0], body.data[1], body.data[2]);
+        return boxSDF(obj, position);
+    } else if (type == 3) {
+        Cross obj = Cross(body.data[0], body.data[1], body.data[2]);
+        return crossSDF(obj, position);
+    }
+    return emptySDF();
+}
+
+Surface listApply(uint mode, Surface left, Surface right, bool base) {
+    if (base) {
+        if (mode == 1)
+            right = opComplement(right);
+        return right;
+    }
+
+    if (mode == 0) return opUnion(left, right);
+    else if (mode == 1) return opUComplement(left, right);
+    else if (mode == 2) return opIntersection(left, right);
+    else if (mode == 3) return opDifference(left, right);
+    return left;
+}
+
+/// Scene ///
 bool inside(vec3 position) {
     return all(lessThan(abs(position - boundsPosition), bounds));
 }
@@ -38,25 +195,45 @@ float lighting(vec3 position, vec3 normal) {
     return max(saturation, dot(normal, normalize(lightPosition - position)));
 }
 
-Surface sphereSurface(Sphere obj, vec3 position) {
-    float sd = length(obj.position.xyz - position) - obj.radius.x;
-    return Surface(sd, obj.color.xyz);
-}
-
-Surface unionSurface(Surface s1, Surface s2) {
-    if (s1.SD < s2.SD) {
-        return s1;
-    }
-    return s2;
-}
-
 Surface SDF(vec3 position) {
-    Surface result = Surface( 1.0f/0.0f, vec3(1.0f) );
-    for (int i = 0; i < sphereTotal; i++) {
-        Surface surface = sphereSurface(sphere[i], position);
-        result = unionSurface(result, surface);
+    stackClear();
+    Item top = Item(0, 0, emptySDF());
+    stackPush(top);
+
+    uint total = 0;
+
+    while (!stackEmpty()) {
+        Node meta = listMeta(top.ID);
+        bool base = listIsBase(++top.offset);
+        if (top.offset > meta.ID.x) {
+            // List end
+            Item pop = stackPop();
+            meta = listMeta(pop.ID);
+            base = listIsBase(pop.offset);
+
+            top.ID = pop.ID;
+            top.offset = pop.offset;
+            top.surface = listApply(meta.type.x, pop.surface, top.surface, base);
+            continue;
+        }
+
+        Node node = listPull(top.ID, top.offset);
+        if (node.type.x == 0) {
+            // List node
+            stackPush(top);
+            top.ID = node.ID.x;
+            top.offset = 0;
+            top.surface = emptySDF();
+
+        } else {
+            // Body node
+            Body body = bodyPull(node.type.x, node.ID.x);
+            Surface surface = bodySDF(node.type.x, body, position);
+            top.surface = listApply(meta.type.x, top.surface, surface, base);
+        }
     }
-    return result;
+
+    return top.surface;
 }
 
 vec3 grad(vec3 position) {
@@ -89,9 +266,8 @@ vec3 raymarch(vec3 ray) {
         result = SDF(position);
         position += result.SD * ray;
         hit = inside(position);
-        if (!hit) {
+        if (!hit || result.SD < hitPrecision)
             break;
-        }
     }
 
     vec3 color = vec3(0.0f);

@@ -17,6 +17,7 @@ CXXFLAGS += -Xpreprocessor
 CXXFLAGS += -fopenmp
 CXXFLAGS += -Wno-deprecated-declarations
 CXXFLAGS += -O2
+CXXFLAGS += -DLAYOUT_STD140
 
 CCFLAGS   = $(INCFLAGS)
 CCFLAGS  += -std=c11
