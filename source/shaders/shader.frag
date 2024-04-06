@@ -11,14 +11,10 @@ out vec4 outColor;
 
 in vec2 uv;
 
-int iterations = 1000;
-float saturation = 0.05f;
-float hitPrecision = 1e-3f;
-
-vec3 boundsPosition = vec3(0.0f);
-vec3 bounds = vec3(200.0f);
-
-vec3 lightPosition = vec3(50.0f, 10.0f, -20.0f);
+struct Light {
+    vec3 position;
+    vec3 color;
+};
 
 /// Scene Bodies ///
 struct Surface {
@@ -27,22 +23,29 @@ struct Surface {
 };
 
 struct Sphere {
-    vec4 position;
-    vec4 radius;
-    vec4 color;
+    vec3 position;
+    float radius;
+    vec3 color;
 };
 
 struct Box {
-    vec4 position;
-    vec4 size;
-    vec4 color;
+    vec3 position;
+    vec3 size;
+    vec3 color;
 };
 
 struct Cross {
-    vec4 position;
-    vec4 size;
-    vec4 color;
+    vec3 position;
+    vec3 size;
+    vec3 color;
 };
+
+uniform int iterations;
+uniform float saturation;
+uniform float hitPrecision;
+
+uniform Light light;
+uniform Box bounds;
 
 /// SSBO elements ///
 struct Body {
@@ -136,22 +139,22 @@ Surface opDifference(Surface s1, Surface s2) {
 
 /// Body SDFs ///
 Surface sphereSDF(Sphere obj, vec3 position) {
-    float sd = length(obj.position.xyz - position) - obj.radius.x;
-    return Surface(sd, obj.color.xyz);
+    float sd = length(obj.position - position) - obj.radius;
+    return Surface(sd, obj.color);
 }
 
 Surface boxSDF(Box obj, vec3 position) {
-    vec3 distances = abs(position - obj.position.xyz) - obj.size.xyz / 2;
+    vec3 distances = abs(position - obj.position) - obj.size / 2;
     float sd = max(max(distances.x, distances.y), distances.z);
-    return Surface(sd, obj.color.xyz);
+    return Surface(sd, obj.color);
 }
 
 Surface crossSDF(Cross obj, vec3 position) {
-    vec3 distances = abs(position - obj.position.xyz) - obj.size.xyz / 2;
+    vec3 distances = abs(position - obj.position) - obj.size / 2;
     float dmin = min(min(distances.x, distances.y), distances.z);
     float dmax = max(max(distances.x, distances.y), distances.z);
     float sd = distances.x + distances.y + distances.z - dmin - dmax;
-    return Surface(sd, obj.color.xyz);
+    return Surface(sd, obj.color);
 }
 
 Surface emptySDF() {
@@ -160,13 +163,13 @@ Surface emptySDF() {
 
 Surface bodySDF(uint type, Body body, vec3 position) {
     if (type == 1) {
-        Sphere obj = Sphere(body.data[0], body.data[1], body.data[2]);
+        Sphere obj = Sphere(body.data[0].xyz, body.data[1].x, body.data[2].xyz);
         return sphereSDF(obj, position);
     } else if (type == 2) {
-        Box obj = Box(body.data[0], body.data[1], body.data[2]);
+        Box obj = Box(body.data[0].xyz, body.data[1].xyz, body.data[2].xyz);
         return boxSDF(obj, position);
     } else if (type == 3) {
-        Cross obj = Cross(body.data[0], body.data[1], body.data[2]);
+        Cross obj = Cross(body.data[0].xyz, body.data[1].xyz, body.data[2].xyz);
         return crossSDF(obj, position);
     }
     return emptySDF();
@@ -188,11 +191,11 @@ Surface listApply(uint mode, Surface left, Surface right, bool base) {
 
 /// Scene ///
 bool inside(vec3 position) {
-    return all(lessThan(abs(position - boundsPosition), bounds));
+    return all(lessThan(abs(position - bounds.position), bounds.size / 2));
 }
 
 float lighting(vec3 position, vec3 normal) {
-    return max(saturation, dot(normal, normalize(lightPosition - position)));
+    return max(saturation, dot(normal, normalize(light.position - position)));
 }
 
 Surface SDF(vec3 position) {

@@ -26,7 +26,7 @@ using namespace LiteImage;
 namespace render {
 
     /// CPU ///
-    static float4 raymarch(float3 ray);
+    static float3 raymarch(float3 ray);
     static void pixel(Image2D<float4> &image,
             const uint width, const uint height, int2 coord);
 
@@ -45,6 +45,7 @@ namespace render {
     static uint mode(Body::Mode mode);
     static void genssbo(const char *name, GLuint &ssbo, uint binding);
     static void pushssbo(GLuint ssbo, void *data, size_t size);
+    static void pushuniforms(void);
 
     namespace shader {
         GLuint program;
@@ -71,8 +72,7 @@ namespace render {
         static void packbody(::Body::Base *in, Body *out);
         static void genscene(
             Body bodies[constants::gpu::bodyTypes * constants::gpu::bodyMax],
-            Node tree[constants::gpu::listEntries * constants::gpu::listMax],
-            Item stack[constants::gpu::stackMax]);
+            Node tree[constants::gpu::listEntries * constants::gpu::listMax]);
     };
 }
 
@@ -81,7 +81,7 @@ namespace render {
 ///////////////////////////////////////////
 
 // Calculate the color produced by ray
-float4 render::raymarch(float3 ray) {
+float3 render::raymarch(float3 ray) {
     float3 position(0.0f);
     Body::Surface surface {};
     bool hit = true;
@@ -99,23 +99,41 @@ float4 render::raymarch(float3 ray) {
         color = light * surface.color;
     }
 
-    return float4(color.x, color.y, color.z, 1.0f);
+    return color;
 }
 
 // Calculate pixel at the given image coord
 void render::pixel(Image2D<float4> &image, const uint width, const uint height, int2 coord) {
     static const float AR = float(width) / height;
 
-    float u = (coord.x + 0.5) / width;
-    float v = (coord.y + 0.5) / height;
+    float2 s1 = float2( -AR/2, (float) 1/2 ); // screen top left corner
+    float2 s2 = float2(  AR/2, (float)-1/2 ); // screen bottom right corner
 
-    float x = lerp(-AR/2, AR/2, u);
-    float y = lerp( (float)1/2, (float)-1/2, v);
-    float z = 1.0f;
-    float3 ray = normalize( float3(x, y, z) );
+    float2 psize = float2( (float) 1 / width, (float) 1 / height ); // pixel size
 
-    float4 color = raymarch(ray);
-    image[coord] = color;
+    // screen space UV
+    float2 uv1      = float2(coord) * psize;
+    int2 offset     = int2(1, 1);
+    float2 uv2      = float2(coord + offset) * psize;
+
+    float2 p1       = float2( lerp( s1.x, s2.x, uv1.x), lerp( s1.y, s2.y, uv1.y) ); // pixel top left corner
+    float2 p2       = float2( lerp( s1.x, s2.x, uv2.x), lerp( s1.y, s2.y, uv2.y) ); // pixel bottom right corner
+
+    float3 total = float3(0.0f);
+    for (int i = 0; i < constants::SSAA::kernel; i++) {
+        for (int j = 0; j < constants::SSAA::kernel; j++) {
+            float2 uv = float2( i + 1, j + 1 ) / constants::SSAA::kernel;
+            float x = lerp( p1.x, p2.x, uv.x);
+            float y = lerp( p1.y, p2.y, uv.y);
+            float z = 1.0f;
+            float3 ray = normalize( float3(x, y, z) );
+            float3 color = raymarch(ray);
+            total += color;
+        }
+    }
+
+    float3 color = total / (constants::SSAA::kernel * constants::SSAA::kernel);
+    image[coord] = float4(color.x, color.y, color.z, 1.0f);
 }
 
 void render::CPU(Image2D<float4> &image, const uint width, const uint height) {
@@ -340,8 +358,9 @@ void render::shader::packbody(::Body::Base *in, render::shader::Body *out) {
 
 void render::shader::genscene(
     render::shader::Body bodies[constants::gpu::bodyTypes * constants::gpu::bodyMax],
-    render::shader::Node tree[constants::gpu::listEntries * constants::gpu::listMax],
-    render::shader::Item stack[constants::gpu::stackMax]) {
+    render::shader::Node tree[constants::gpu::listEntries * constants::gpu::listMax]) {
+
+    render::shader::Item stack[constants::gpu::stackMax];
     ::Body::List* liststack[constants::gpu::stackMax];
 
     size_t bodySize[constants::gpu::bodyTypes];
@@ -411,6 +430,34 @@ void render::shader::genscene(
     }
 }
 
+void render::pushuniforms(void) {
+    GLuint uniform;
+
+    // Constants
+    uniform = glGetUniformLocation(render::shader::program, "iterations");
+    glUniform1i(uniform, constants::iterations);
+
+    uniform = glGetUniformLocation(render::shader::program, "saturation");
+    glUniform1f(uniform, constants::saturation);
+
+    uniform = glGetUniformLocation(render::shader::program, "hitPrecision");
+    glUniform1f(uniform, constants::precision);
+
+    // Light
+    uniform = glGetUniformLocation(render::shader::program, "light.position");
+    glUniform3fv(uniform, 1, scene::light->position.M);
+
+    uniform = glGetUniformLocation(render::shader::program, "light.color");
+    glUniform3fv(uniform, 1, scene::light->color.M);
+
+    // Bounds
+    uniform = glGetUniformLocation(render::shader::program, "bounds.position");
+    glUniform3fv(uniform, 1, scene::bounds->position.M);
+
+    uniform = glGetUniformLocation(render::shader::program, "bounds.size");
+    glUniform3fv(uniform, 1, scene::bounds->size.M);
+}
+
 void render::push(void) {
     /// Screen space triangles ///
     float vertices[] = {
@@ -425,18 +472,23 @@ void render::push(void) {
 
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
+    /// Fill uniforms ///
+    render::pushuniforms();
+
     /// Generate and fill SSBOs ///
     render::genssbo("Bodies", render::bodySSBO, 0);
     render::genssbo("Tree", render::treeSSBO, 1);
 
     auto bodies = new render::shader::Body[constants::gpu::bodyTypes * constants::gpu::bodyMax];
     auto tree = new render::shader::Node[constants::gpu::listEntries * constants::gpu::listMax];
-    auto stack = new render::shader::Item[constants::gpu::stackMax];
 
-    render::shader::genscene(bodies, tree, stack);
+    render::shader::genscene(bodies, tree);
 
     render::pushssbo(render::bodySSBO, bodies, constants::gpu::bodyTypes * constants::gpu::bodyMax * sizeof(*bodies));
     render::pushssbo(render::treeSSBO, tree, constants::gpu::listEntries * constants::gpu::listMax * sizeof(*tree));
+
+    delete[] bodies;
+    delete[] tree;
 }
 
 void render::GPU(unsigned char *image, const uint width, const uint height) {
