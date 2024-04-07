@@ -378,6 +378,9 @@ void render::pushuniforms(void) {
     uniform = glGetUniformLocation(render::shader::program, "hitPrecision");
     glUniform1f(uniform, constants::precision);
 
+    uniform = glGetUniformLocation(render::shader::program, "kernelSize");
+    glUniform1i(uniform, constants::SSAA::kernel);
+
     // Light
     uniform = glGetUniformLocation(render::shader::program, "light.position");
     glUniform3fv(uniform, 1, scene::light->position.M);

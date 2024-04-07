@@ -69,14 +69,19 @@ MengerSponge <float3>position <float>size <int>iterations
 
 ## Runtime
 
-CPU: Intel Core i5-13500H 2.60GHz  
-Memory: 16GB 4800MHz LPDDR5  
-GPU: Intel Iris Xe Graphics  
+CPU: Intel Core i7-7700HQ 2.80GHz  
+Memory: SODIMM 16GB 2.40GHz  
+GPU: NVIDIA GeForce GTX 1060
 
 ```sh
-Render with CPU (1 thread):     31.2233s
-Render with OpenMP (4 threads): 4.60926s
-Render with GPU:                2.43829s
-Copy to GPU:                    0.0049152s
-Render + Copy on GPU:           2.44321s
+...Loading scene
+...Setting up context
+...Compiling shaders
+...Generating buffers
+...Rendering
+Render with CPU (1 thread):     408.141s
+Render with OpenMP (4 threads): 108.99s
+Render with GPU:                45.273s
+Copy to GPU:                    0.0057246s
+Render + Copy on GPU:           45.2787s
 ```

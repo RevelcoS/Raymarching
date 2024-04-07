@@ -46,6 +46,8 @@ uniform int iterations;
 uniform float saturation;
 uniform float hitPrecision;
 
+uniform int kernelSize;
+
 uniform Light light;
 uniform Box bounds;
 
@@ -286,18 +288,38 @@ vec3 raymarch(vec3 ray) {
 }
 
 void main() {
+    /////////////////////////////////////////////
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
     float AR = float(width) / height;
 
-    float u = (coord.x + 0.5) / width;
-    float v = (coord.y + 0.5) / height;
+    vec2 s1 = vec2( -AR/2,  0.5f ); // screen top left corner
+    vec2 s2 = vec2(  AR/2, -0.5f ); // screen bottom right corner
 
-    float x = mix( -AR/2, AR/2, u );
-    float y = mix( 0.5f, -0.5f, v );
-    float z = 1.0f;
-    vec3 ray = normalize( vec3(x, y, z) );
-    vec3 color = raymarch(ray);
+    vec2 psize = vec2( 1.0f / width, 1.0f / height ); // pixel size
 
+    // screen space UV
+    vec2 uv1      = vec2(coord) * psize;
+    ivec2 offset  = ivec2(1, 1);
+    vec2 uv2      = vec2(coord + offset) * psize;
+
+    vec2 p1       = vec2( mix( s1.x, s2.x, uv1.x), mix( s1.y, s2.y, uv1.y) ); // pixel top left corner
+    vec2 p2       = vec2( mix( s1.x, s2.x, uv2.x), mix( s1.y, s2.y, uv2.y) ); // pixel bottom right corner
+
+    vec3 total = vec3(0.0f);
+
+    for (int i = 0; i < kernelSize; i++) {
+        for (int j = 0; j < kernelSize; j++) {
+            vec2 uv = vec2( i + 1, j + 1 ) / kernelSize;
+            float x = mix( p1.x, p2.x, uv.x);
+            float y = mix( p1.y, p2.y, uv.y);
+            float z = 1.0f;
+            vec3 ray = normalize( vec3(x, y, z) );
+            vec3 color = raymarch(ray);
+            total += color;
+        }
+    }
+
+    vec3 color = total / (kernelSize * kernelSize);
     vec4 outColor = vec4(color, 1.0f);
     imageStore(image, coord, outColor);
 }
