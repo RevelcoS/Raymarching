@@ -15,13 +15,21 @@ using namespace LiteMath;
 using namespace LiteImage;
 
 int main() {
-    const uint width = constants::width;
-    const uint height = constants::height;
-    Image2D<float4> CPUimage(width, height);
+    Image2D<float4> CPUimage(constants::width, constants::height);
 
-    // Init scene objects
+    // Load scene
     std::cout << "...Loading scene" << std::endl;
     scene::load("scene/objects.txt");
+
+    // Setup GPU
+    std::cout << "...Setting up context" << std::endl;
+    render::setup::context();
+
+    std::cout << "...Compiling shaders" << std::endl;
+    render::setup::shaders();
+
+    std::cout << "...Generating buffers" << std::endl;
+    render::setup::buffers();
 
     /// CPU ///
     std::cout << "...Rendering" << std::endl;
@@ -29,14 +37,14 @@ int main() {
     std::chrono::duration<double> duration;
 
     start = std::chrono::system_clock::now();
-    render::CPU(CPUimage, width, height);
+    render::CPU(CPUimage);
     end = std::chrono::system_clock::now();
     duration = end - start;
     std::cout << "Render with CPU (1 thread):\t" << duration.count() << "s" << std::endl;
 
     // OpenMP
     start = std::chrono::system_clock::now();
-    render::OMP(CPUimage, width, height);
+    render::OMP(CPUimage);
     end = std::chrono::system_clock::now();
     duration = end - start;
     std::cout << "Render with OpenMP (4 threads):\t" << duration.count() << "s" << std::endl;
@@ -45,8 +53,7 @@ int main() {
     SaveImage("out_cpu.png", CPUimage, constants::gamma);
 
     /// GPU ///
-    unsigned char *GPUimage = new unsigned char[width * height * 4];
-    render::setup(width, height);
+    unsigned char *GPUimage = new unsigned char[constants::width * constants::height * 4];
 
     // Push scene data to GPU
     std::chrono::time_point<std::chrono::system_clock> pushStart, pushEnd;
@@ -59,12 +66,9 @@ int main() {
 
     // Render with GPU
     start = std::chrono::system_clock::now();
-    render::GPU(GPUimage, width, height);
+    render::GPU(GPUimage);
     end = std::chrono::system_clock::now();
     duration = end - start;
-
-    // Cleanup GPU
-    render::destroy();
 
     std::cout << "Render with GPU:\t\t" << duration.count() << "s" << std::endl;
     std::cout << "Copy to GPU:\t\t\t" << pushDuration.count() << "s" << std::endl;
@@ -73,9 +77,11 @@ int main() {
     std::cout << "Render + Copy on GPU:\t\t" << duration.count() << "s" << std::endl;
 
     // Save GPU image
-    stbi_flip_vertically_on_write(true);
-    stbi_write_jpg("out_gpu.png", width, height,
-            constants::stb::channels, GPUimage, constants::stb::quality);
+    stbi_write_jpg("out_gpu.png", constants::width, constants::height,
+        constants::stb::channels, GPUimage, constants::stb::quality);
+
+    // Cleanup GPU
+    render::destroy();
     delete[] GPUimage;
 
     return 0;

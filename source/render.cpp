@@ -27,20 +27,15 @@ namespace render {
 
     /// CPU ///
     static float3 raymarch(float3 ray);
-    static void pixel(Image2D<float4> &image,
-            const uint width, const uint height, int2 coord);
+    static void pixel(Image2D<float4> &image, int2 coord);
 
     /// GPU ///
     GLFWwindow* window;
-    static GLFWwindow* context(const uint width, const uint height);
 
-    GLuint VBO, VAO;
     GLuint texture;
-    GLuint RBO, FBO;
-
     GLuint bodySSBO;
     GLuint treeSSBO;
-    static void genbuffers(const uint width, const uint height);
+    static void gentexture(void);
     static uint type(Body::Type type);
     static uint mode(Body::Mode mode);
     static void genssbo(const char *name, GLuint &ssbo, uint binding);
@@ -50,7 +45,7 @@ namespace render {
     namespace shader {
         GLuint program;
         static GLuint load(const char *path, GLenum type);
-        static GLuint link(GLuint vertex, GLuint fragment);
+        static GLuint link(GLuint compute);
         static void log(GLuint shader, GLenum status, GLenum type = 0);
 
         struct Body {
@@ -103,13 +98,13 @@ float3 render::raymarch(float3 ray) {
 }
 
 // Calculate pixel at the given image coord
-void render::pixel(Image2D<float4> &image, const uint width, const uint height, int2 coord) {
-    static const float AR = float(width) / height;
+void render::pixel(Image2D<float4> &image, int2 coord) {
+    static const float AR = float(constants::width) / constants::height;
 
     float2 s1 = float2( -AR/2, (float) 1/2 ); // screen top left corner
     float2 s2 = float2(  AR/2, (float)-1/2 ); // screen bottom right corner
 
-    float2 psize = float2( (float) 1 / width, (float) 1 / height ); // pixel size
+    float2 psize = float2( (float) 1 / constants::width, (float) 1 / constants::height ); // pixel size
 
     // screen space UV
     float2 uv1      = float2(coord) * psize;
@@ -136,21 +131,21 @@ void render::pixel(Image2D<float4> &image, const uint width, const uint height, 
     image[coord] = float4(color.x, color.y, color.z, 1.0f);
 }
 
-void render::CPU(Image2D<float4> &image, const uint width, const uint height) {
-    for (int pi = 0; pi < height; pi++) {
-        for (int pj = 0; pj < width; pj++) {
+void render::CPU(Image2D<float4> &image) {
+    for (int pi = 0; pi < constants::height; pi++) {
+        for (int pj = 0; pj < constants::width; pj++) {
             int2 coord(pj, pi);
-            pixel(image, width, height, coord);
+            pixel(image, coord);
         }
     }
 }
 
-void render::OMP(Image2D<float4> &image, const uint width, const uint height) {
+void render::OMP(Image2D<float4> &image) {
     #pragma omp parallel for
-    for (int pi = 0; pi < height; pi++) {
-        for (int pj = 0; pj < width; pj++) {
+    for (int pi = 0; pi < constants::height; pi++) {
+        for (int pj = 0; pj < constants::width; pj++) {
             int2 coord(pj, pi);
-            pixel(image, width, height, coord);
+            pixel(image, coord);
         }
     }
 }
@@ -178,14 +173,11 @@ GLuint render::shader::load(const char *path, GLenum type) {
     return shader;
 }
 
-GLuint render::shader::link(GLuint vertex, GLuint fragment) {
+GLuint render::shader::link(GLuint compute) {
     GLuint program = glCreateProgram();
-    glAttachShader(program, vertex);
-    glAttachShader(program, fragment);
+    glAttachShader(program, compute);
     glLinkProgram(program);
-    glDeleteShader(vertex);
-    glDeleteShader(fragment);
-
+    glDeleteShader(compute);
     return program;
 }
 
@@ -213,6 +205,8 @@ void render::shader::log(GLuint shader, GLenum status, GLenum type) {
                         std::cout << "Vertex "; break;
                     case GL_FRAGMENT_SHADER:
                         std::cout << "Fragment "; break;
+                    case GL_COMPUTE_SHADER:
+                        std::cout << "Compute "; break;
                     default: break;
                 }
                 std::cout << "Shader failed to load"; break;
@@ -225,29 +219,6 @@ void render::shader::log(GLuint shader, GLenum status, GLenum type) {
         }
         std::cout << std::endl << log << std::endl;
     }
-}
-
-// Setup GLFW and GLAD context
-GLFWwindow* render::context(const uint width, const uint height) {
-    glfwInit();
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
-
-    GLFWwindow* window = glfwCreateWindow(width, height, constants::title, NULL, NULL);
-    if (!window) {
-        std::cout << "[Error] Failed to create window" << std::endl;
-        glfwTerminate();
-    }
-    glfwMakeContextCurrent(window);
-
-    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
-        std::cout << "[Error] Failed to init GLAD" << std::endl;
-    }
-    
-    return window;
 }
 
 uint render::type(Body::Type type) {
@@ -271,59 +242,17 @@ void render::pushssbo(GLuint ssbo, void *data, size_t size) {
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 }
 
-void render::genbuffers(const uint width, const uint height) {
-    /// Generate VAO and VBO ///
-    glGenBuffers(1, &render::VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, render::VBO);
-
-    glGenVertexArrays(1, &render::VAO);
-    glBindVertexArray(render::VAO);
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-    glEnableVertexAttribArray(0); 
-
+void render::gentexture() {
     /// Generate texture ///
     glGenTextures(1, &render::texture);
+    glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, render::texture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-
-    /// Generate RBO and FBO ///
-    glGenRenderbuffers(1, &render::RBO);
-    glBindRenderbuffer(GL_RENDERBUFFER, render::RBO);
-    glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH32F_STENCIL8, width, height);
-
-    glGenFramebuffers(1, &render::FBO);
-    glBindFramebuffer(GL_FRAMEBUFFER, render::FBO);
-    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, render::texture, 0);
-    glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT,
-            GL_RENDERBUFFER, render::RBO);
-
-    // Render to buffer
-    glBindFramebuffer(GL_FRAMEBUFFER, render::FBO);
-    glViewport(0, 0, width, height);
-}
-
-void render::setup(const uint width, const uint height) {
-    /// Setup context ///
-    render::window = render::context(width, height);
- 
-    /// Compile shaders ///
-    GLuint vertex = render::shader::load("source/shaders/shader.vert", GL_VERTEX_SHADER);
-    render::shader::log(vertex, GL_COMPILE_STATUS, GL_VERTEX_SHADER); 
-
-    GLuint fragment = render::shader::load("source/shaders/shader.frag", GL_FRAGMENT_SHADER);
-    render::shader::log(fragment, GL_COMPILE_STATUS, GL_FRAGMENT_SHADER);
-
-    /// Link program ///
-    render::shader::program = render::shader::link(vertex, fragment);
-    render::shader::log(render::shader::program, GL_LINK_STATUS);
-    glUseProgram(render::shader::program);
-
-    /// Generate buffers ///
-    render::genbuffers(width, height);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, constants::width, constants::height, 0, GL_RGBA, GL_FLOAT, NULL);
+    glBindImageTexture(0, render::texture, 0, GL_FALSE, 0, GL_WRITE_ONLY, GL_RGBA32F);
 }
 
 void render::shader::packbody(::Body::Base *in, render::shader::Body *out) {
@@ -434,6 +363,12 @@ void render::pushuniforms(void) {
     GLuint uniform;
 
     // Constants
+    uniform = glGetUniformLocation(render::shader::program, "width");
+    glUniform1ui(uniform, constants::width);
+
+    uniform = glGetUniformLocation(render::shader::program, "height");
+    glUniform1ui(uniform, constants::height);
+
     uniform = glGetUniformLocation(render::shader::program, "iterations");
     glUniform1i(uniform, constants::iterations);
 
@@ -458,27 +393,50 @@ void render::pushuniforms(void) {
     glUniform3fv(uniform, 1, scene::bounds->size.M);
 }
 
+// Setup GLFW and GLAD context
+void render::setup::context() {
+    glfwInit();
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 4);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
+
+    render::window = glfwCreateWindow(constants::width, constants::height, constants::title, NULL, NULL);
+    if (!render::window) {
+        std::cout << "[Error] Failed to create window" << std::endl;
+        glfwTerminate();
+    }
+    glfwMakeContextCurrent(render::window);
+
+    if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress)) {
+        std::cout << "[Error] Failed to init GLAD" << std::endl;
+    }
+}
+
+void render::setup::shaders() {
+    /// Compile shader ///
+    GLuint compute = render::shader::load("source/shaders/shader.comp", GL_COMPUTE_SHADER);
+    render::shader::log(compute, GL_COMPILE_STATUS, GL_COMPUTE_SHADER);
+
+    /// Link program ///
+    render::shader::program = render::shader::link(compute);
+    render::shader::log(render::shader::program, GL_LINK_STATUS);
+    glUseProgram(render::shader::program);
+}
+
+void render::setup::buffers() {
+    /// Generate buffers ///
+    render::gentexture();
+    render::genssbo("Bodies", render::bodySSBO, 0);
+    render::genssbo("Tree", render::treeSSBO, 1);
+}
+
 void render::push(void) {
-    /// Screen space triangles ///
-    float vertices[] = {
-        -1.0f,  1.0f,
-         1.0f,  1.0f,
-        -1.0f, -1.0f,
-
-        -1.0f, -1.0f,
-         1.0f, -1.0f,
-         1.0f,  1.0f
-    };
-
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-
     /// Fill uniforms ///
     render::pushuniforms();
 
-    /// Generate and fill SSBOs ///
-    render::genssbo("Bodies", render::bodySSBO, 0);
-    render::genssbo("Tree", render::treeSSBO, 1);
-
+    /// Fill SSBOs ///
     auto bodies = new render::shader::Body[constants::gpu::bodyTypes * constants::gpu::bodyMax];
     auto tree = new render::shader::Node[constants::gpu::listEntries * constants::gpu::listMax];
 
@@ -491,12 +449,12 @@ void render::push(void) {
     delete[] tree;
 }
 
-void render::GPU(unsigned char *image, const uint width, const uint height) {
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+void render::GPU(unsigned char *image) {
     glUseProgram(render::shader::program);
-    glBindVertexArray(render::VAO);
-    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glDispatchCompute(
+        constants::width / constants::gpu::groupUnits,
+        constants::height / constants::gpu::groupUnits, 1);
+	glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
     glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, image);
 }
 

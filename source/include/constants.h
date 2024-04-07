@@ -6,8 +6,11 @@ using namespace LiteMath;
 
 namespace constants {
     static const char *title    = "Raymarching";    // Project title
+
+    // Note: width and height must be divisible by gpu::groupUnits
     const uint width            = 768;              // Window width
     const uint height           = 768;              // Window height
+
     const int iterations        = 1000;             // Raymarcing iterations
     const float gamma           = 1.0f;             // gamma correction
     const float saturation      = 0.05f;            // lighting saturation
@@ -24,8 +27,9 @@ namespace constants {
         const int channels      = 4;                // Color channels
     }
 
-    // Constants must be in sync with glsl fragment shader defines
+    // Constants below must be in sync with glsl compute shader defines
     namespace gpu {
+        constexpr uint   groupUnits     = 32;       // Number of units per work group in one dimension 
         constexpr size_t bodyElements   = 4;        // Length of Body struct float4 array
         constexpr size_t bodyTypes      = 20;       // Limit number of Body Types
         constexpr size_t bodyMax        = 1 << 10;  // Amount of Bodies array contains
