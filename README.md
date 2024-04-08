@@ -47,14 +47,14 @@ To run the project execute:
 make run
 ```
 
-Rendering initial scene might take ~1 min.  
-For faster rendering change
-MengerSponge iterations in scene file to `2`.
+Rendering initial scene might take ~1 hour.  
+For faster rendering change  
+MengerSponge iterations in scene file to `2` and SSAA::kernel in constants.h to `1`.  
 
 ## Scene
 
 To render your own scene modify `scene/objects.txt`.  
-Objects description:
+Objects description:  
 
 ```txt
 Bounds <float>size
@@ -79,9 +79,9 @@ GPU: NVIDIA GeForce GTX 1060
 ...Compiling shaders
 ...Generating buffers
 ...Rendering
-Render with CPU (1 thread):     408.141s
-Render with OpenMP (4 threads): 108.99s
-Render with GPU:                45.273s
-Copy to GPU:                    0.0057246s
-Render + Copy on GPU:           45.2787s
+Render with CPU (1 thread):     3226.6s
+Render with OpenMP (4 threads): 819.268s
+Render with GPU:                280.258s
+Copy to GPU:                    0.0053246s
+Render + Copy on GPU:           280.263s
 ```

@@ -10,9 +10,10 @@ using namespace LiteMath;
 
 namespace scene {
     extern Body::List *tree;
-    extern Object::Light *light;
-    extern Body::Box *bounds;
-    bool inside(float3 position);
+    extern std::vector<Object::Light*> lights;
+    Body::Surface surface(float3 &position, float3 ray);
+    float3 raymarch(float3 ray);
+    bool shadow(Object::Light *light, float3 position, float3 normal);
     float lighting(float3 position, float3 normal);
     Body::Surface SDF(float3 position);
     float3 grad(float3 position);

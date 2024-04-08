@@ -18,18 +18,49 @@ using namespace LiteMath;
 // TODO: free objects when process finished
 namespace scene {
     Body::List *tree;
-    Object::Light *light;
-    Body::Box *bounds;
+    std::vector<Object::Light*> lights;
 }
 
-// Check if the position is inside of scene boundaries
-bool scene::inside(float3 position) {
-    return all_of(abs(position - scene::bounds->position) < scene::bounds->size / 2);
+// Calculate the color produced by ray
+float3 scene::raymarch(float3 ray) {
+    float3 position = float3(0.0f);
+    Body::Surface surface = scene::surface(position, ray);
+
+    float3 normal = normalize(scene::grad(position));
+    float light = scene::lighting(position, normal);
+    float3 color = light * surface.color;
+
+    return color;
+}
+
+Body::Surface scene::surface(float3 &position, float3 ray) {
+    Body::Surface surface {};
+    for (int _ = 0; _ < constants::iterations; _++) {
+        surface = scene::SDF(position);
+        position += surface.SD * ray;
+        if (surface.SD < constants::precision::surface) break;
+    }
+    return surface;
+}
+
+// Calculate shadow ray
+bool scene::shadow(Object::Light *light, float3 position, float3 normal) {
+    float3 ray = normalize(light->position - position);
+    position += normal * (constants::precision::surface + constants::precision::offset);
+    scene::surface(position, ray);
+    return dot(light->position - position, ray) > 0;
 }
 
 // Calculate the lighting at the surface
 float scene::lighting(float3 position, float3 normal) {
-    return max(constants::saturation, dot(normal, normalize(scene::light->position - position)));
+    float lighting = 0.0f;
+    for (uint idx = 0; idx < lights.size(); idx++) {
+        Object::Light *light = lights[idx];
+        if (!scene::shadow(light, position, normal))
+            lighting += dot(normal, normalize(light->position - position));
+    }
+    lighting = clamp(lighting, constants::saturation, 1.0f);
+    return lighting;
 }
 
 // Calculate SDF from scene tree
@@ -84,6 +115,13 @@ void scene::load(const char *path) {
             input >> position.x >> position.y >> position.z;
             input >> size.x >> size.y >> size.z;
             obj = new Body::Box(position, size, color);
+        } else if (cmd == "Bounds") {
+            float size;
+            input >> size;
+            Body::Box *box = new Body::Box(float3(0.0f), float3(size), float3(0.0f));
+            Body::List *list = new Body::List(Body::Mode::COMPLEMENT);
+            list->append(box);
+            obj = list;
         } else if (cmd == "Cross") {
             float3 position, size;
             input >> position.x >> position.y >> position.z;
@@ -107,15 +145,13 @@ void scene::load(const char *path) {
             continue;
         }
 
-        if (cmd == "Bounds") {
-            float size;
-            input >> size;
-            scene::bounds = new Body::Box(float3(0.0f), float3(size));
-        } else if (cmd == "Light") {
+        if (cmd == "Light") {
             float3 position;
             input >> position.x >> position.y >> position.z;
-            scene::light = new Object::Light(position);
-        } else if (cmd == "Color") {;
+            Object::Light *light = new Object::Light(position);
+            lights.push_back(light);
+
+        } else if (cmd == "Color") {
             input >> color.x >> color.y >> color.z;
         }
     }

@@ -26,7 +26,6 @@ using namespace LiteImage;
 namespace render {
 
     /// CPU ///
-    static float3 raymarch(float3 ray);
     static void pixel(Image2D<float4> &image, int2 coord);
 
     /// GPU ///
@@ -35,6 +34,7 @@ namespace render {
     GLuint texture;
     GLuint bodySSBO;
     GLuint treeSSBO;
+    GLuint lightSSBO;
     static void gentexture(void);
     static uint type(Body::Type type);
     static uint mode(Body::Mode mode);
@@ -65,37 +65,17 @@ namespace render {
         };
 
         static void packbody(::Body::Base *in, Body *out);
+        static void packlight(::Object::Light *in, Body *out);
         static void genscene(
             Body bodies[constants::gpu::bodyTypes * constants::gpu::bodyMax],
             Node tree[constants::gpu::listEntries * constants::gpu::listMax]);
+        static void genlights(Body lights[constants::gpu::lights]);
     };
 }
 
 ///////////////////////////////////////////
 ///                 CPU                 ///
 ///////////////////////////////////////////
-
-// Calculate the color produced by ray
-float3 render::raymarch(float3 ray) {
-    float3 position(0.0f);
-    Body::Surface surface {};
-    bool hit = true;
-    for (int _ = 0; _ < constants::iterations; _++) {
-        surface = scene::SDF(position);
-        position += surface.SD * ray;
-        hit = scene::inside(position);
-        if (!hit || surface.SD < constants::precision) break;
-    }
-
-    float3 color = float3(0.0f);
-    if (hit) {
-        float3 normal = normalize(scene::grad(position));
-        float light = scene::lighting(position, normal);
-        color = light * surface.color;
-    }
-
-    return color;
-}
 
 // Calculate pixel at the given image coord
 void render::pixel(Image2D<float4> &image, int2 coord) {
@@ -122,7 +102,7 @@ void render::pixel(Image2D<float4> &image, int2 coord) {
             float y = lerp( p1.y, p2.y, uv.y);
             float z = 1.0f;
             float3 ray = normalize( float3(x, y, z) );
-            float3 color = raymarch(ray);
+            float3 color = scene::raymarch(ray);
             total += color;
         }
     }
@@ -285,6 +265,17 @@ void render::shader::packbody(::Body::Base *in, render::shader::Body *out) {
     }
 }
 
+void render::shader::packlight(::Object::Light *in, render::shader::Body *out) {
+    std::memcpy(out->data, in->position.M, sizeof(in->position.M));
+    std::memcpy(out->data + 4, in->color.M, sizeof(in->color.M));
+}
+
+void render::shader::genlights(render::shader::Body lights[constants::gpu::lights]) {
+    for (uint ID = 0; ID < scene::lights.size(); ID++) {
+        render::shader::packlight(scene::lights[ID], lights + ID);
+    }
+}
+
 void render::shader::genscene(
     render::shader::Body bodies[constants::gpu::bodyTypes * constants::gpu::bodyMax],
     render::shader::Node tree[constants::gpu::listEntries * constants::gpu::listMax]) {
@@ -375,25 +366,18 @@ void render::pushuniforms(void) {
     uniform = glGetUniformLocation(render::shader::program, "saturation");
     glUniform1f(uniform, constants::saturation);
 
-    uniform = glGetUniformLocation(render::shader::program, "hitPrecision");
-    glUniform1f(uniform, constants::precision);
+    uniform = glGetUniformLocation(render::shader::program, "surfacePrecision");
+    glUniform1f(uniform, constants::precision::surface);
+
+    uniform = glGetUniformLocation(render::shader::program, "offsetPrecision");
+    glUniform1f(uniform, constants::precision::offset);
 
     uniform = glGetUniformLocation(render::shader::program, "kernelSize");
     glUniform1i(uniform, constants::SSAA::kernel);
 
     // Light
-    uniform = glGetUniformLocation(render::shader::program, "light.position");
-    glUniform3fv(uniform, 1, scene::light->position.M);
-
-    uniform = glGetUniformLocation(render::shader::program, "light.color");
-    glUniform3fv(uniform, 1, scene::light->color.M);
-
-    // Bounds
-    uniform = glGetUniformLocation(render::shader::program, "bounds.position");
-    glUniform3fv(uniform, 1, scene::bounds->position.M);
-
-    uniform = glGetUniformLocation(render::shader::program, "bounds.size");
-    glUniform3fv(uniform, 1, scene::bounds->size.M);
+    uniform = glGetUniformLocation(render::shader::program, "totalLights");
+    glUniform1ui(uniform, scene::lights.size());
 }
 
 // Setup GLFW and GLAD context
@@ -433,6 +417,7 @@ void render::setup::buffers() {
     render::gentexture();
     render::genssbo("Bodies", render::bodySSBO, 0);
     render::genssbo("Tree", render::treeSSBO, 1);
+    render::genssbo("Lights", render::lightSSBO, 2);
 }
 
 void render::push(void) {
@@ -442,14 +427,18 @@ void render::push(void) {
     /// Fill SSBOs ///
     auto bodies = new render::shader::Body[constants::gpu::bodyTypes * constants::gpu::bodyMax];
     auto tree = new render::shader::Node[constants::gpu::listEntries * constants::gpu::listMax];
+    auto lights = new render::shader::Body[constants::gpu::lights];
 
     render::shader::genscene(bodies, tree);
+    render::shader::genlights(lights);
 
     render::pushssbo(render::bodySSBO, bodies, constants::gpu::bodyTypes * constants::gpu::bodyMax * sizeof(*bodies));
     render::pushssbo(render::treeSSBO, tree, constants::gpu::listEntries * constants::gpu::listMax * sizeof(*tree));
+    render::pushssbo(render::lightSSBO, lights, constants::gpu::lights * sizeof(*lights));
 
     delete[] bodies;
     delete[] tree;
+    delete[] lights;
 }
 
 void render::GPU(unsigned char *image) {

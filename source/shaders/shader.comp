@@ -1,12 +1,13 @@
 #version 430 core
 
-#define GROUP_UNITS     32              // Number of units per work group in one dimension 
+#define GROUP_UNITS     16              // Number of units per work group in one dimension 
 #define BODY_ELEMENTS   4               // Length of Body struct vec4 array
 #define BODY_TYPES      20              // Limit number of Body Types
 #define BODY_MAX        (1 << 10)       // Amount of Bodies array contains
 #define LIST_ENTRIES    (1 << 6)        // Number of Lists
 #define LIST_MAX        (1 << 10)       // Amount of Nodes List contains
 #define STACK_MAX       (1 << 6)        // Amount of Items in Stack
+#define LIGHTS_MAX      (1 << 4)        // Max number of lights
 
 layout (local_size_x = GROUP_UNITS, local_size_y = GROUP_UNITS) in;
 layout (rgba32f, binding = 0) restrict writeonly uniform image2D image;
@@ -16,12 +17,19 @@ struct Light {
     vec3 color;
 };
 
-/// Scene Bodies ///
-struct Surface {
+// SDF return value
+struct Value {
     float SD;
     vec3 color;
 };
 
+// Raymarch return value
+struct Surface {
+    vec3 position;
+    vec3 color;
+};
+
+/// Scene Bodies ///
 struct Sphere {
     vec3 position;
     float radius;
@@ -44,12 +52,11 @@ uniform uint width;
 uniform uint height;
 uniform int iterations;
 uniform float saturation;
-uniform float hitPrecision;
+uniform float surfacePrecision;
+uniform float offsetPrecision;
 
 uniform int kernelSize;
-
-uniform Light light;
-uniform Box bounds;
+uniform uint totalLights;
 
 /// SSBO elements ///
 struct Body {
@@ -71,11 +78,16 @@ layout (std430, binding = 1) readonly buffer Tree {
     Node tree[LIST_ENTRIES * LIST_MAX];
 };
 
+layout (std430, binding = 2) readonly buffer Lights {
+    Body lights[LIGHTS_MAX];
+};
+
+
 /// Stack ///
 struct Item {
     uint ID;
     uint offset;
-    Surface surface;
+    Value surface;
 };
 
 Item stack[STACK_MAX];
@@ -114,58 +126,64 @@ Body bodyPull(uint type, uint ID) {
     return bodies[type * BODY_MAX + ID];
 }
 
-/// Surface operations ///
-Surface opUnion(Surface s1, Surface s2) {
+// Light operations
+Light lightPull(uint ID) {
+    Body body = lights[ID];
+    return Light(body.data[0].xyz, body.data[1].xyz);
+}
+
+/// SDF operations ///
+Value opUnion(Value s1, Value s2) {
     if (s1.SD < s2.SD) {
         return s1;
     }
     return s2;
 }
 
-Surface opComplement(Surface s) {
-    return Surface(-s.SD, s.color);
+Value opComplement(Value s) {
+    return Value(-s.SD, s.color);
 }
 
-Surface opUComplement(Surface s1, Surface s2) {
+Value opUComplement(Value s1, Value s2) {
     return opUnion(s1, opComplement(s2));
 }
 
-Surface opIntersection(Surface s1, Surface s2) {
+Value opIntersection(Value s1, Value s2) {
     if (s1.SD > s2.SD) {
         return s1;
     }
     return s2;
 }
 
-Surface opDifference(Surface s1, Surface s2) {
+Value opDifference(Value s1, Value s2) {
     return opIntersection(s1, opComplement(s2));
 }
 
 /// Body SDFs ///
-Surface sphereSDF(Sphere obj, vec3 position) {
+Value sphereSDF(Sphere obj, vec3 position) {
     float sd = length(obj.position - position) - obj.radius;
-    return Surface(sd, obj.color);
+    return Value(sd, obj.color);
 }
 
-Surface boxSDF(Box obj, vec3 position) {
+Value boxSDF(Box obj, vec3 position) {
     vec3 distances = abs(position - obj.position) - obj.size / 2;
     float sd = max(max(distances.x, distances.y), distances.z);
-    return Surface(sd, obj.color);
+    return Value(sd, obj.color);
 }
 
-Surface crossSDF(Cross obj, vec3 position) {
+Value crossSDF(Cross obj, vec3 position) {
     vec3 distances = abs(position - obj.position) - obj.size / 2;
     float dmin = min(min(distances.x, distances.y), distances.z);
     float dmax = max(max(distances.x, distances.y), distances.z);
     float sd = distances.x + distances.y + distances.z - dmin - dmax;
-    return Surface(sd, obj.color);
+    return Value(sd, obj.color);
 }
 
-Surface emptySDF() {
-    return Surface( 1.0f / 0.0f, vec3(1.0f) );
+Value emptySDF() {
+    return Value( 1.0f / 0.0f, vec3(1.0f) );
 }
 
-Surface bodySDF(uint type, Body body, vec3 position) {
+Value bodySDF(uint type, Body body, vec3 position) {
     if (type == 1) {
         Sphere obj = Sphere(body.data[0].xyz, body.data[1].x, body.data[2].xyz);
         return sphereSDF(obj, position);
@@ -179,7 +197,7 @@ Surface bodySDF(uint type, Body body, vec3 position) {
     return emptySDF();
 }
 
-Surface listApply(uint mode, Surface left, Surface right, bool base) {
+Value listApply(uint mode, Value left, Value right, bool base) {
     if (base) {
         if (mode == 1)
             right = opComplement(right);
@@ -194,15 +212,7 @@ Surface listApply(uint mode, Surface left, Surface right, bool base) {
 }
 
 /// Scene ///
-bool inside(vec3 position) {
-    return all(lessThan(abs(position - bounds.position), bounds.size / 2));
-}
-
-float lighting(vec3 position, vec3 normal) {
-    return max(saturation, dot(normal, normalize(light.position - position)));
-}
-
-Surface SDF(vec3 position) {
+Value SDF(vec3 position) {
     stackClear();
     Item top = Item(0, 0, emptySDF());
     stackPush(top);
@@ -235,7 +245,7 @@ Surface SDF(vec3 position) {
         } else {
             // Body node
             Body body = bodyPull(node.type.x, node.ID.x);
-            Surface surface = bodySDF(node.type.x, body, position);
+            Value surface = bodySDF(node.type.x, body, position);
             top.surface = listApply(meta.type.x, top.surface, surface, base);
         }
     }
@@ -249,40 +259,60 @@ vec3 grad(vec3 position) {
     vec3 dy = vec3(0.0f, h, 0.0f);
     vec3 dz = vec3(0.0f, 0.0f, h);
 
-    Surface dxl = SDF(position + dx);
-    Surface dxr = SDF(position - dx);
+    Value dxl = SDF(position + dx);
+    Value dxr = SDF(position - dx);
     float dfdx = dxl.SD - dxr.SD;
 
-    Surface dyl = SDF(position + dy);
-    Surface dyr = SDF(position - dy);
+    Value dyl = SDF(position + dy);
+    Value dyr = SDF(position - dy);
     float dfdy = dyl.SD - dyr.SD;
 
-    Surface dzl = SDF(position + dz);
-    Surface dzr = SDF(position - dz);
+    Value dzl = SDF(position + dz);
+    Value dzr = SDF(position - dz);
     float dfdz = dzl.SD - dzr.SD;
 
     return vec3(dfdx, dfdy, dfdz) / (2 * h);
 }
 
-vec3 raymarch(vec3 ray) {
-    Surface result;
-    result.color = vec3(1.0f);
-    vec3 position = vec3(0.0f);
-    bool hit = true;
-    for (int i = 0; i < iterations; i++) {
-        result = SDF(position);
-        position += result.SD * ray;
-        hit = inside(position);
-        if (!hit || result.SD < hitPrecision)
-            break;
+Surface raySurface(vec3 position, vec3 ray) {
+    Surface surface = Surface( position, vec3(0.0f) );
+    for (int _ = 0; _ < iterations; _++) {
+        Value value = SDF(surface.position);
+        surface.position += value.SD * ray;
+        surface.color = value.color;
+        if (value.SD < surfacePrecision) break;
     }
+    return surface;
+}
 
-    vec3 color = vec3(0.0f);
-    if (hit) {
-        vec3 normal = normalize(grad(position));
-        float light = lighting(position, normal);
-        color = result.color * light;
+// Calculate shadow ray
+bool shadow(Light light, vec3 position, vec3 normal) {
+    vec3 ray = normalize(light.position - position);
+    position += normal * (surfacePrecision + offsetPrecision);
+    Surface surface = raySurface(position, ray);
+    return dot(light.position - surface.position, ray) > 0;
+}
+
+// Calculate the lighting at the surface
+float lighting(vec3 position, vec3 normal) {
+    float lighting = 0.0f;
+    for (uint ID = 0; ID < totalLights; ID++) {
+        Light light = lightPull(ID);
+        if (!shadow(light, position, normal))
+            lighting += dot(normal, normalize(light.position - position));
     }
+    lighting = clamp(lighting, saturation, 1.0f);
+    return lighting;
+}
+
+// Calculate the color produced by ray
+vec3 raymarch(vec3 ray) {
+    vec3 position = vec3(0.0f);
+    Surface surface = raySurface(position, ray);
+
+    vec3 normal = normalize(grad(surface.position));
+    float light = lighting(surface.position, normal);
+    vec3 color = light * surface.color;
 
     return color;
 }
