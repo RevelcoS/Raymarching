@@ -161,7 +161,7 @@ namespace Body {
         Sphere *sphere = new Sphere(position, radius, color);
         result->append(sphere);
 
-        float3 diffposition = float3(position.x, position.y, position.z - 1.5f * radius);
+        float3 diffposition = float3(position.x + 1.5f * radius, position.y, position.z);
         Sphere *diff = new Sphere(diffposition, radius, color);
         result->append(diff);
 

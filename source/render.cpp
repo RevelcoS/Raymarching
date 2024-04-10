@@ -66,6 +66,7 @@ namespace render {
 
         static void packbody(::Body::Base *in, Body *out);
         static void packlight(::Object::Light *in, Body *out);
+        static void packmatrix(float4x4 in, float out[16]);
         static void genscene(
             Body bodies[constants::gpu::bodyTypes * constants::gpu::bodyMax],
             Node tree[constants::gpu::listEntries * constants::gpu::listMax]);
@@ -81,8 +82,10 @@ namespace render {
 void render::pixel(Image2D<float4> &image, int2 coord) {
     static const float AR = float(constants::width) / constants::height;
 
-    float2 s1 = float2( -AR/2, (float) 1/2 ); // screen top left corner
-    float2 s2 = float2(  AR/2, (float)-1/2 ); // screen bottom right corner
+    float w = scene::camera->focal;
+    float h = w / AR;
+    float2 s1 = float2( -w/2,  h/2 ); // screen top left corner
+    float2 s2 = float2(  w/2, -h/2 ); // screen bottom right corner
 
     float2 psize = float2( (float) 1 / constants::width, (float) 1 / constants::height ); // pixel size
 
@@ -94,15 +97,20 @@ void render::pixel(Image2D<float4> &image, int2 coord) {
     float2 p1       = float2( lerp( s1.x, s2.x, uv1.x), lerp( s1.y, s2.y, uv1.y) ); // pixel top left corner
     float2 p2       = float2( lerp( s1.x, s2.x, uv2.x), lerp( s1.y, s2.y, uv2.y) ); // pixel bottom right corner
 
+    float3 position = float3(0.0f);
+    position = scene::camera->view(position);
+
     float3 total = float3(0.0f);
     for (int i = 0; i < constants::SSAA::kernel; i++) {
         for (int j = 0; j < constants::SSAA::kernel; j++) {
             float2 uv = float2( i + 1, j + 1 ) / constants::SSAA::kernel;
             float x = lerp( p1.x, p2.x, uv.x);
             float y = lerp( p1.y, p2.y, uv.y);
-            float z = 1.0f;
+            float z = -1.0f;
             float3 ray = normalize( float3(x, y, z) );
-            float3 color = scene::raymarch(ray);
+            ray = scene::camera->view(ray, false);
+
+            float3 color = scene::raymarch(position, ray);
             total += color;
         }
     }
@@ -270,6 +278,13 @@ void render::shader::packlight(::Object::Light *in, render::shader::Body *out) {
     std::memcpy(out->data + 4, in->color.M, sizeof(in->color.M));
 }
 
+void render::shader::packmatrix(float4x4 in, float out[16]) {
+    std::memcpy(out, in.m_col[0].M, sizeof(in.m_col[0].M));
+    std::memcpy(out + 4, in.m_col[1].M, sizeof(in.m_col[1].M));
+    std::memcpy(out + 8, in.m_col[2].M, sizeof(in.m_col[2].M));
+    std::memcpy(out + 12, in.m_col[3].M, sizeof(in.m_col[3].M));
+}
+
 void render::shader::genlights(render::shader::Body lights[constants::gpu::lights]) {
     for (uint ID = 0; ID < scene::lights.size(); ID++) {
         render::shader::packlight(scene::lights[ID], lights + ID);
@@ -378,6 +393,15 @@ void render::pushuniforms(void) {
     // Light
     uniform = glGetUniformLocation(render::shader::program, "totalLights");
     glUniform1ui(uniform, scene::lights.size());
+
+    // Camera
+    float transform[16];
+    render::shader::packmatrix(scene::camera->transform, transform);
+    uniform = glGetUniformLocation(render::shader::program, "transform");
+    glUniformMatrix4fv(uniform, 1, GL_FALSE, transform);
+
+    uniform = glGetUniformLocation(render::shader::program, "focal");
+    glUniform1f(uniform, scene::camera->focal);
 }
 
 // Setup GLFW and GLAD context

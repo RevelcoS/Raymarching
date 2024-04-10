@@ -9,7 +9,7 @@ namespace constants {
 
     // Note: width and height must be divisible by gpu::groupUnits
     const uint width            = 1024;             // Window width
-    const uint height           = 1024;             // Window height
+    const uint height           = 768;             // Window height
 
     const int iterations        = 1000;             // Raymarcing iterations
     const float gamma           = 1.0f;             // gamma correction

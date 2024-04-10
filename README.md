@@ -79,9 +79,9 @@ GPU: NVIDIA GeForce GTX 1060
 ...Compiling shaders
 ...Generating buffers
 ...Rendering
-Render with CPU (1 thread):     3226.6s
-Render with OpenMP (4 threads): 819.268s
-Render with GPU:                280.258s
-Copy to GPU:                    0.0053246s
-Render + Copy on GPU:           280.263s
+Render with CPU (1 thread):     2152.27s
+Render with OpenMP (4 threads): 492.166s
+Render with GPU:                185.161s
+Copy to GPU:                    0.0064819s
+Render + Copy on GPU:           185.168s
 ```

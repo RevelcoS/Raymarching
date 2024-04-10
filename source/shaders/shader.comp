@@ -58,6 +58,9 @@ uniform float offsetPrecision;
 uniform int kernelSize;
 uniform uint totalLights;
 
+uniform mat4x4 transform;
+uniform float focal;
+
 /// SSBO elements ///
 struct Body {
     vec4 data[BODY_ELEMENTS];
@@ -211,6 +214,14 @@ Value listApply(uint mode, Value left, Value right, bool base) {
     return left;
 }
 
+/// Camera ///
+vec3 view(vec3 vector, bool offset) {
+    vec4 extended = vec4(vector, 0.0f);
+    if (offset) extended.w = 1.0f;
+    vec4 transformed = transform * extended;
+    return transformed.xyz;
+}
+
 /// Scene ///
 Value SDF(vec3 position) {
     stackClear();
@@ -306,14 +317,11 @@ float lighting(vec3 position, vec3 normal) {
 }
 
 // Calculate the color produced by ray
-vec3 raymarch(vec3 ray) {
-    vec3 position = vec3(0.0f);
+vec3 raymarch(vec3 position, vec3 ray) {
     Surface surface = raySurface(position, ray);
-
     vec3 normal = normalize(grad(surface.position));
     float light = lighting(surface.position, normal);
     vec3 color = light * surface.color;
-
     return color;
 }
 
@@ -322,8 +330,10 @@ void main() {
     ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
     float AR = float(width) / height;
 
-    vec2 s1 = vec2( -AR/2,  0.5f ); // screen top left corner
-    vec2 s2 = vec2(  AR/2, -0.5f ); // screen bottom right corner
+    float w = focal;
+    float h = w / AR;
+    vec2 s1 = vec2( -w/2,  h/2 ); // screen top left corner
+    vec2 s2 = vec2(  w/2, -h/2 ); // screen bottom right corner
 
     vec2 psize = vec2( 1.0f / width, 1.0f / height ); // pixel size
 
@@ -337,14 +347,19 @@ void main() {
 
     vec3 total = vec3(0.0f);
 
+    vec3 position = vec3(0.0f);
+    position = view(position, true);
+
     for (int i = 0; i < kernelSize; i++) {
         for (int j = 0; j < kernelSize; j++) {
             vec2 uv = vec2( i + 1, j + 1 ) / kernelSize;
             float x = mix( p1.x, p2.x, uv.x);
             float y = mix( p1.y, p2.y, uv.y);
-            float z = 1.0f;
+            float z = -1.0f;
             vec3 ray = normalize( vec3(x, y, z) );
-            vec3 color = raymarch(ray);
+            ray = view(ray, false);
+
+            vec3 color = raymarch(position, ray);
             total += color;
         }
     }
