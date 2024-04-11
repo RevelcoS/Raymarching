@@ -1,14 +1,16 @@
-# Raymarching V1.1
+# Raymarching V1.2
 
 Render 3D objects using raymarching algorithm.  
 
 ![Rendered on GPU](https://github.com/RevelcoS/Raymarching/raw/master/out_gpu.png)
 
-## Features
+## New Features
 
-* Windows support
-* GPU rendering
-* CPU faster rendering
+* Camera support  
+* Multiple lights  
+* Shadows  
+* SSAA  
+* Compute shader  
 
 ## Setup
 
@@ -65,6 +67,15 @@ Cross <float3>position <float3>dimensions
 Sphere <float3>position <float>radius
 DeathStar <float3>position <float>radius
 MengerSponge <float3>position <float>size <int>iterations
+```
+
+Camera description:  
+
+```txt
+Camera Position <float3>position
+Camera Direction <float3>direction
+Camera Up <float3>up
+Camera FOV <float>FOV
 ```
 
 ## Runtime
